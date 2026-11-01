@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/jsm/" } }</script></head><body>
+<script type="module">
+import * as THREE from "three"; import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"; import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+const id = new URLSearchParams(location.search).get("map"), m = await fetch("maps/" + id + ".json").then(r => r.json());
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(1600, 900); r.outputColorSpace = THREE.SRGBColorSpace; document.body.appendChild(r.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x8fb3d1);
+const gl = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("maps/" + m.visual); gl.scene.traverse(o => { if (o.isMesh) { const tx = o.material.map; o.material = new THREE.MeshBasicMaterial({ map: tx, side: THREE.DoubleSide, toneMapped: false }); } });
+gl.scene.scale.setScalar(m.scale || 1); sc.add(gl.scene);
+const b = new THREE.Box3().setFromObject(gl.scene), c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3());
+const cam = new THREE.PerspectiveCamera(55, 16 / 9, .1, 500); cam.position.set(c.x + s.x * .05, b.min.y + s.y * .55, b.max.z - s.z * .08); cam.lookAt(c.x, b.min.y + s.y * .2, b.min.z + s.z * .25);
+r.render(sc, cam); window.done = true;
+</script></body></html>

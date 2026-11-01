@@ -1,0 +1,6 @@
+node_modules/
+tools/.venv/
+tools/work-*/
+maps/originals/
+maps/incoming/
+server/boards.json

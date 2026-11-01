@@ -1,0 +1,1 @@
+{"name":"fps-poc-server","private":true,"type":"module","dependencies":{"three":"^0.186.1","three-mesh-bvh":"^0.9.16","ws":"^8.22.0"}}
