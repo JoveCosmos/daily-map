@@ -33,11 +33,34 @@ the rotation, default 3600), `STATE_DIRECTORY` (where the leaderboard is kept).
 
 ## Add a map
 
-`tools/add-map.sh <world.glb> <id> "<Display name>" [--scale 35] [--activate]` turns a world exported from HY-World into
-a map: a collision mesh, a desktop and a phone version, a playability check (it refuses maps that are too small or have
-too few spawn points), and a menu preview. `--activate` adds it to the rotation.
-Needs Python 3 with `trimesh` and `fast_simplification`, Node with `tools/package.json` installed, and Google Chrome for
-the preview.
+Any 3D world exported as a GLB can become a map; ours come from Tencent HY-World (text or image to a 3D world, on
+Tencent's site). One command does the rest:
+
+```bash
+tools/add-map.sh <world.glb> <id> "<Display name>" [--scale 35] [--activate] [--force]
+```
+
+It builds a collision mesh (about 200k faces), a desktop visual (compressed, half the triangles, 2048 px textures) and a
+lighter phone visual, removes textures the game never uses, writes `maps/<id>.json`, checks the map is playable, and
+renders a menu preview. It refuses a map with too little walkable ground, a walk shorter than 15 m or longer than 120 m,
+or fewer than 3 safe spawns a team, and reports enclosed pockets. Nothing reaches `maps/` until every step has passed.
+The raw upload is kept in `maps/originals/`.
+
+- `--scale` sets metres per model unit (35 suits HY-World exports; try another value if the world looks too big or
+  small, then compare the reported walk length).
+- `--activate` adds the map to `maps/rotation.json`, the public room's rotation. Restart the server to load it, or set
+  `RESTART_CMD` to a command that restarts it and the script runs it for you.
+- Look around a map without playing: `http://127.0.0.1:8945/preview.html?map=<id>`.
+- Play it locally: put its id alone in `maps/rotation.json` (or first in the list) and start the server; the public
+  room opens on it. The room moves to the next map every `DAILY_PERIOD` seconds (default 3600; 86400 for a real day).
+
+Needs Python 3 with `trimesh` and `fast_simplification` (`pip install trimesh fast-simplification`), Node with
+`tools/package.json` installed (`cd tools && npm install`), and Google Chrome for the preview.
+
+## Working on the code
+
+Read [AGENTS.md](AGENTS.md) first: how the client, server and shared simulation fit together, the rules that
+keep multiplayer correct, and traps already hit.
 
 ## Layout
 

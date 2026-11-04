@@ -3,8 +3,8 @@
 #   tools/add-map.sh <upload.glb> <id> "<Display name>" [--scale 35] [--activate] [--force]
 # Steps: collision (200k faces), desktop visual (meshopt, webp 2048, half the triangles), phone visual (webp 1024,
 # ~15%), unused textures stripped, map json, playability check (fails the map when it cannot be played), menu
-# preview, raw upload kept in maps/originals. --activate appends the id to maps/rotation.json and restarts the game
-# server (players are put straight back into the room). Nothing reaches maps/ until every step has passed.
+# preview, raw upload kept in maps/originals. --activate appends the id to maps/rotation.json and, when RESTART_CMD is
+# set, runs it to restart the game server (players are put straight back into the room). Nothing reaches maps/ until every step has passed.
 set -euo pipefail
 T=$(cd "$(dirname "$0")" && pwd); ROOT=$(dirname "$T"); MAPS=$ROOT/maps
 usage() { sed -n '2,3p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -40,6 +40,6 @@ import json, sys; p, i = sys.argv[1:]; d = json.load(open(p)); r = d["rotation"]
 if i not in r: r.append(i)
 open(p, "w").write(json.dumps(d) + "\n"); print("rotation:", ", ".join(r))
 PY
-  systemctl restart fps-poc-server; echo "game server restarted"
-else echo "not in the rotation yet: rerun with --activate, or add \"$ID\" to maps/rotation.json and restart fps-poc-server"; fi
+  if [ -n "${RESTART_CMD:-}" ]; then eval "$RESTART_CMD" && echo "game server restarted"; else echo "added to maps/rotation.json: restart the game server to load it (set RESTART_CMD to do it here)"; fi
+else echo "not in the rotation yet: rerun with --activate, or add \"$ID\" to maps/rotation.json and restart the game server"; fi
 echo "done in ${SECONDS}s"
