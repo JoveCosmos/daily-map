@@ -244,6 +244,75 @@ body.touch #wname{bottom:54px}
 #ping{left:auto;right:22px;transform:none;bottom:22px}
 .pz2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pz2:has(.leave:not([hidden])){min-height:44px}
+
+/* armour beside health, the grenade strip over the weapon name, the flashbang's white-out (2026-11-14) */
+#arw{display:flex;gap:8px;align-items:baseline;margin-left:6px}#arw[hidden],#hmv[hidden]{display:none}
+#arv{color:#9cc6ff}#hmv{color:#9cc6ff}
+#nades{position:absolute;left:50%;right:auto;transform:translateX(calc(-100% - 20px));bottom:54px;display:flex;gap:10px;font:600 10px/1 ui-monospace,monospace;letter-spacing:.12em;color:var(--dim);text-shadow:0 1px 2px #000;pointer-events:none}
+#nades .z{opacity:.28}#nades .on{color:#fff}
+body.touch #nades{bottom:54px}
+#flashw{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#tNade{right:calc(5vw + 168px + env(safe-area-inset-right));bottom:calc(28vh + 96px)}
+#radar{position:absolute;left:14px;top:14px;width:160px;height:160px;border-radius:14px;background:var(--hud);border:1px solid var(--line);pointer-events:none}
+body.touch #radar{top:76px;left:calc(12px + env(safe-area-inset-left));width:104px;height:104px}
+body:not(.playing) #radar{display:none}
+#kc .kdm{display:flex;flex-wrap:wrap;gap:4px 14px;font:600 12px ui-sans-serif,system-ui;color:#a9b7b0;margin-top:2px}#kc .kdm b{color:#fff}
+#feed small.tg{padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.1);color:#d9dee0;font-weight:600;letter-spacing:.02em}
+.priv .seg2.full{grid-column:1/-1}
+/* Competitive (2026-11-14): money under the radar, the plant/defuse bar, the buy menu, BOMB on the clock */
+#money{position:absolute;left:14px;top:184px;display:none;gap:10px;align-items:baseline;font:700 20px/1 ui-monospace,monospace;color:#7ee0bf;text-shadow:0 1px 3px #000;pointer-events:none}
+body.comp.playing #money{display:flex}
+body.touch #money{top:186px;left:calc(12px + env(safe-area-inset-left));font-size:16px}
+#modelta{font-size:14px;opacity:0}#modelta.up{color:#7ee0bf}#modelta.dn{color:var(--red)}
+#bhint{font:600 11px ui-sans-serif,system-ui;letter-spacing:.12em;color:var(--dim)}#bhint[hidden]{display:none}
+#bprog{position:absolute;left:50%;top:60%;transform:translateX(-50%);width:240px;display:grid;gap:6px;text-align:center;font:600 12px ui-sans-serif,system-ui;letter-spacing:.06em;color:#fff;text-shadow:0 1px 2px #000;pointer-events:none}
+#bprog[hidden]{display:none}#bprog b{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden}#bprog i{display:block;height:100%;width:0;background:var(--amber)}
+#buy{position:absolute;left:14px;top:220px;width:250px;padding:12px;border-radius:14px;background:rgba(10,12,13,.78);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--line);display:grid;gap:4px;font:600 13px ui-sans-serif,system-ui;color:#e8ece9}
+#buy[hidden]{display:none}#buy h4{margin:0 0 4px;font:700 13px ui-sans-serif,system-ui;letter-spacing:.12em;text-transform:uppercase;display:flex;justify-content:space-between}#buy h4 small{color:#7ee0bf;font:700 14px ui-monospace,monospace}
+#buy button{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:8px;border:1px solid transparent;background:rgba(255,255,255,.05);color:inherit;font:inherit;text-align:left;cursor:pointer}
+#buy button:hover,#buy button:focus-visible{border-color:rgba(255,255,255,.25);outline:none}#buy button.no{opacity:.4}#buy button b{color:#7ee0bf;font:600 12px ui-monospace,monospace}
+#buy kbd{font:700 11px ui-monospace,monospace;color:var(--dim)}#buy p{margin:6px 0 0;font:500 11px ui-sans-serif,system-ui;color:var(--dim)}
+body.touch #buy{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
+#clock.bomb{color:var(--red);letter-spacing:.08em}
+#nades .c4{color:var(--amber)}#nades .c4.on{color:#fff}#nades .kit{color:#9cc6ff}
+#tC4{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 30px)}#tBuy{left:calc(116px + env(safe-area-inset-left));top:12px}
+#spec{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);display:flex;gap:12px;align-items:baseline;padding:8px 14px;border-radius:10px;background:var(--hud);border:1px solid var(--line);font:700 15px ui-sans-serif,system-ui;color:#fff;pointer-events:none;white-space:nowrap}
+#spec[hidden]{display:none}#spec small{font:600 11px ui-sans-serif,system-ui;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}#spec span{font:600 12px ui-monospace,monospace;color:#a9b7b0}
+.priv .botn{grid-column:1}.priv .cyc{min-width:0;height:30px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#d7dfda;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer}
+.priv .cyc:hover{border-color:rgba(126,224,191,.5)}.priv .cyc.off{opacity:.35;pointer-events:none}.priv{flex-shrink:0}
+.priv .seg2 button:focus-visible,.priv .cyc:focus-visible{outline:1px solid #7ee0bf}
+/* talking (2026-11-14): the chat log bottom left, its input, the radio menu */
+#chat{position:absolute;left:14px;bottom:90px;width:min(380px,40vw);display:flex;flex-direction:column;gap:3px;font:600 13px/1.35 ui-sans-serif,system-ui;color:#eef2ef;text-shadow:0 1px 2px #000;pointer-events:none}
+#chat div{padding:3px 8px;border-radius:6px;background:var(--hud);transition:opacity 1.2s}#chat div.old{opacity:0}#chat small{color:var(--dim);font-weight:600}
+#chat b.ct{color:#9cc6ff}#chat b.t{color:#ffd27a}
+#chatin{position:absolute;left:14px;bottom:56px;width:min(380px,40vw);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(8,10,11,.8);color:#fff;font:600 13px ui-sans-serif,system-ui;outline:none}
+#chatin[hidden]{display:none}#chatin:focus{border-color:#7ee0bf}
+#radio{position:absolute;left:14px;top:220px;width:250px;padding:12px;border-radius:14px;background:rgba(10,12,13,.78);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--line);display:grid;gap:3px;font:600 13px ui-sans-serif,system-ui;color:#e8ece9}
+#radio[hidden]{display:none}#radio h4{margin:0 0 4px;font:700 13px ui-sans-serif,system-ui;letter-spacing:.12em;text-transform:uppercase}
+#radio button{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;border:1px solid transparent;background:rgba(255,255,255,.05);color:inherit;font:inherit;text-align:left;cursor:pointer}
+#radio button:hover,#radio button:focus-visible{border-color:rgba(255,255,255,.25);outline:none}#radio kbd{font:700 11px ui-monospace,monospace;color:var(--dim)}#radio p{margin:6px 0 0;font:500 11px ui-sans-serif,system-ui;color:var(--dim)}
+body.touch #chat{bottom:auto;top:200px;width:42vw;font-size:11px}
+#vote{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:240px;padding:12px 14px;border-radius:14px;background:rgba(10,12,13,.78);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid var(--amber);font:600 13px ui-sans-serif,system-ui;color:#fff;pointer-events:none}
+#vote[hidden]{display:none}#vote h4{margin:0 0 6px;font:700 14px ui-sans-serif,system-ui}#vote p{margin:4px 0 0;color:var(--dim);font-size:12px}
+.sfin{grid-column:2/4;display:flex;gap:8px;flex-wrap:wrap}.sfin button{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:var(--c);cursor:pointer;padding:0}.sfin button.on{border-color:#fff;box-shadow:0 0 0 2px rgba(126,224,191,.6)}
+/* phones held sideways: the Settings pill sits at the right edge, so its panel drops below it instead of opening to
+   the right off screen (2026-11-14) */
+@media (max-height:520px) and (orientation:landscape){.keys .pad{left:auto;right:0;top:calc(100% + 10px);width:min(380px,60vw)}}
+/* phones (2026-11-14): the radio next to Buy, menus kept on screen, votes answered by a tap, text clear of each other */
+#tRadio{left:calc(168px + env(safe-area-inset-left));top:12px}
+body.touch #radio{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
+body.touch #chatin{bottom:auto;top:12px;left:50%;transform:translateX(-50%);width:min(420px,60vw)}
+body.touch #chat{top:210px}
+#msg.low{top:max(36%,160px)}
+#vote{pointer-events:auto}#vote .vb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+#vote .vb button{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;font:700 13px ui-sans-serif,system-ui;cursor:pointer}
+#vote .vb button:hover,#vote .vb button:focus-visible{border-color:#7ee0bf;outline:none}#vote kbd{font:600 10px ui-monospace,monospace;color:var(--dim)}
+body.touch #buy,body.touch #radio,body.touch #vote,body.touch #chatin{z-index:5}   /* above the touch layer, so their buttons take the taps */
+#buy,#radio{pointer-events:auto}   /* the HUD ignores the pointer; these two menus must take clicks and taps */
+body.touch #bhint{display:none!important}   /* phones have the Buy button */
+body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:min(300px,46vw);padding:10px 12px}   /* phones: under the score bar, clear of Fire */
+#tInspect{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 168px)}   /* beside Knife, clear of the score bar */
+#tKnife{right:calc(5vw + 168px + env(safe-area-inset-right));bottom:calc(28vh + 162px)}   /* above Nade */
 </style>
 <script type="importmap">
 { "imports": {
@@ -257,6 +326,7 @@ body.touch #wname{bottom:54px}
 <body>
 <div id="hud">
   <div id="hurt"></div>
+  <div id="flashw"></div>
   <div id="fade"></div>
   <div id="dmgdir"></div>
   <div id="scope"></div>
@@ -270,7 +340,17 @@ body.touch #wname{bottom:54px}
   <div id="ping"></div>
   <div id="board"></div>
   <div id="feed"></div>
-  <div class="bar" id="hp"><small>HP</small><span id="hpv">100</span></div>
+  <div class="bar" id="hp"><small>HP</small><span id="hpv">100</span><span id="arw" hidden><small>ARMOR</small><span id="arv">0</span><small id="hmv" hidden>+ HELMET</small></span></div>
+  <div id="nades"></div>
+  <canvas id="radar" width="320" height="320"></canvas>
+  <div id="money"><span id="mov">$800</span><span id="modelta"></span><small id="bhint" hidden>B  buy</small></div>
+  <div id="spec" hidden></div>
+  <div id="chat"></div>
+  <input id="chatin" type="text" maxlength="120" autocomplete="off" hidden>
+  <div id="radio" hidden></div>
+  <div id="vote" hidden></div>
+  <div id="bprog" hidden><span></span><b><i></i></b></div>
+  <div id="buy" hidden></div>
   <div class="bar" id="ammo"><span id="mag">30</span><small id="res">/ 90</small></div>
   <div id="msg"></div>
   <div id="kc" hidden></div>
@@ -284,6 +364,12 @@ body.touch #wname{bottom:54px}
     <button type="button" class="tb" id="tDuck" data-toggle="ControlLeft">Crouch</button>
     <button type="button" class="tb" id="tReload" data-key="KeyR">Reload</button>
     <button type="button" class="tb" id="tSwap" data-key="KeyQ">Switch</button>
+    <button type="button" class="tb" id="tNade" data-key="Digit4">Nade</button>
+    <button type="button" class="tb" id="tC4" data-key="Digit5" hidden>C4</button>
+    <button type="button" class="tb sm" id="tBuy" data-key="KeyB" hidden>Buy</button>
+    <button type="button" class="tb sm" id="tRadio" data-key="KeyZ">Radio</button>
+    <button type="button" class="tb sm" id="tInspect" data-key="KeyF">Look</button>
+    <button type="button" class="tb" id="tKnife" data-key="Digit3">Knife</button>
     <button type="button" class="tb" id="tZoom" data-zoom="1">Zoom</button>
     <button type="button" class="tb wide" id="tUse" data-key="KeyE">Pick up</button>
   </div>
@@ -300,9 +386,9 @@ body.touch #wname{bottom:54px}
           <label class="srow"><span>Volume</span><input type="range" id="setVol" min="0" max="100" step="1"><output id="setVolV"></output></label>
           <div class="srow mouse-only"><span>Crouch key</span><button type="button" class="stog on" id="setCrouch">C</button></div>
           <div class="srow"><span>Invert look</span><button type="button" class="stog" id="setInv" aria-pressed="false">Off</button></div>
-          <div class="srow"><span>Crosshair</span><div class="sxh" id="setXh"><button type="button" data-c="#5cff8a" style="--c:#5cff8a" aria-label="Green"></button><button type="button" data-c="#ffffff" style="--c:#ffffff" aria-label="White"></button><button type="button" data-c="#00e5ff" style="--c:#00e5ff" aria-label="Cyan"></button><button type="button" data-c="#ffd400" style="--c:#ffd400" aria-label="Yellow"></button><button type="button" data-c="#ff4fd8" style="--c:#ff4fd8" aria-label="Pink"></button></div></div>
+          <div class="srow"><span>Crosshair</span><div class="sxh" id="setXh"><button type="button" data-c="#5cff8a" style="--c:#5cff8a" aria-label="Green"></button><button type="button" data-c="#ffffff" style="--c:#ffffff" aria-label="White"></button><button type="button" data-c="#00e5ff" style="--c:#00e5ff" aria-label="Cyan"></button><button type="button" data-c="#ffd400" style="--c:#ffd400" aria-label="Yellow"></button><button type="button" data-c="#ff4fd8" style="--c:#ff4fd8" aria-label="Pink"></button></div></div><div class="srow"><span>Weapon finish</span><div class="sfin" id="setFin"><button type="button" data-f="factory" style="--c:#2c2e31" aria-label="Factory" title="Factory"></button><button type="button" data-f="desert" style="--c:#b49a6a" aria-label="Desert" title="Desert"></button><button type="button" data-f="arctic" style="--c:#d9dde0" aria-label="Arctic" title="Arctic"></button><button type="button" data-f="night" style="--c:#141a2a" aria-label="Night" title="Night"></button><button type="button" data-f="forest" style="--c:#4a5a3a" aria-label="Forest" title="Forest"></button><button type="button" data-f="crimson" style="--c:#8a1a1e" aria-label="Crimson" title="Crimson"></button><button type="button" data-f="gold" style="--c:#c9a14a" aria-label="Gold" title="Gold"></button></div></div>
         </div>
-        <div class="klist"><span class="row">Move<kbd><b>W</b><b>A</b><b>S</b><b>D</b></kbd></span><span class="row">Jump<kbd><b>Space</b></kbd></span><span class="row">Crouch<kbd><b id="kCrouch">C</b></kbd></span><span class="row">Walk<kbd><b>Shift</b></kbd></span><span class="row">Fire<kbd><b>Click</b></kbd></span><span class="row">Zoom<kbd><b>Right</b></kbd></span><span class="row">Reload<kbd><b>R</b></kbd></span><span class="row">Weapons<kbd><b>1</b><b>3</b><b>Q</b></kbd></span><span class="row">Pick up<kbd><b>E</b></kbd></span><span class="row">Scores<kbd><b>Tab</b></kbd></span><span class="row">Respawn<kbd><b>K</b></kbd></span></div></div>
+        <div class="klist"><span class="row">Move<kbd><b>W</b><b>A</b><b>S</b><b>D</b></kbd></span><span class="row">Jump<kbd><b>Space</b></kbd></span><span class="row">Crouch<kbd><b id="kCrouch">C</b></kbd></span><span class="row">Walk<kbd><b>Shift</b></kbd></span><span class="row">Fire<kbd><b>Click</b></kbd></span><span class="row">Zoom<kbd><b>Right</b></kbd></span><span class="row">Reload<kbd><b>R</b></kbd></span><span class="row">Weapons<kbd><b>1</b><b>2</b><b>3</b><b>Q</b></kbd></span><span class="row">Grenades<kbd><b>4</b></kbd></span><span class="row">Throw, lob<kbd><b>Click</b><b>Right</b></kbd></span><span class="row">Pick up<kbd><b>E</b></kbd></span><span class="row">Scores<kbd><b>Tab</b></kbd></span><span class="row">Respawn<kbd><b>K</b></kbd></span><span class="row">Chat, team chat<kbd><b>Y</b><b>U</b></kbd></span><span class="row">Radio<kbd><b>Z</b></kbd></span><span class="row">Mark a spot<kbd><b>Middle</b></kbd></span><span class="row">Bomb<kbd><b>5</b></kbd></span><span class="row">Buy<kbd><b>B</b></kbd></span></div></div>
     </details></div>
     <section class="today">
       <span class="eyebrow">Today</span>
@@ -327,7 +413,7 @@ body.touch #wname{bottom:54px}
     </section>
     <section class="priv" id="priv">
       <div class="tabs" role="tablist"><button type="button" role="tab" class="on" data-tab="mk" aria-selected="true">Create a room</button><button type="button" role="tab" data-tab="jn" aria-selected="false">Join a room</button></div>
-      <div class="pane" id="mk"><div class="seg2" id="bots" role="radiogroup"><button type="button" class="on" data-b="1" role="radio" aria-checked="true">With bots</button><button type="button" data-b="0" role="radio" aria-checked="false">Friends only</button></div><button type="button" class="go2" id="create">Create</button><div class="botn" id="botn"><span>Bots per side</span><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div></div>
+      <div class="pane" id="mk"><div class="seg2 full" id="gmode" role="radiogroup"><button type="button" class="on" data-m="dm" role="radio" aria-checked="true">Deathmatch</button><button type="button" data-m="comp" role="radio" aria-checked="false">Competitive</button></div><div class="seg2" id="bots" role="radiogroup"><button type="button" class="on" data-b="1" role="radio" aria-checked="true">With bots</button><button type="button" data-b="0" role="radio" aria-checked="false">Friends only</button></div><button type="button" class="go2" id="create">Create</button><div class="botn" id="botn"><span>Bots</span><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div><button type="button" class="cyc" id="bdiff" aria-label="Bot difficulty, click to change">Normal</button></div>
       <div class="pane" id="jn" hidden><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join</button></div>
     </section>
   </main>

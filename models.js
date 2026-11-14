@@ -40,6 +40,36 @@ if (typeof document !== "undefined") {
   MAT.black = textured(T.poly(), .6, .15, .002); MAT.olive = textured(T.olive(), .7, .05, .002);
 }
 for (const k in MAT) MAT[k].userData.shared = true;   // shared by every gun: never disposed with one
+/* weapon finishes (2026-11-14): cosmetic only, chosen in Settings, seen by everyone. A finish repaints the gun's body
+   materials (gunmetal, polymer, olive furniture); steel, wood, glass and blades keep theirs. Owning finishes on chain
+   (gno) would plug in here later: the list a player may pick from would come from their wallet */
+export const FINISHES = ["factory", "desert", "arctic", "night", "forest", "crimson", "gold"];
+const FIN = {};
+function finishMats(name) {
+  if (FIN[name]) return FIN[name];
+  if (typeof document === "undefined" || name === "factory" || !FINISHES.includes(name)) return (FIN[name] = null);
+  const camo = (pal, blobs, sq) => tex("fin-" + name, 256, (g, n) => { g.fillStyle = pal[0]; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < blobs; i++) { g.fillStyle = pal[1 + (rnd() * (pal.length - 1) | 0)]; const x = rnd() * n, y = rnd() * n;
+      if (sq) { g.fillRect((x / 8 | 0) * 8, (y / 8 | 0) * 8, (1 + rnd() * 3 | 0) * 8, (1 + rnd() * 2 | 0) * 8); } else { g.beginPath(); const r = 8 + rnd() * 22; g.ellipse(x, y, r, r * (.4 + rnd() * .5), rnd() * 3, 0, 7); g.fill(); } } });
+  const plain = (c, r, m) => { const x = new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m }); x.userData.shared = true; return x; };
+  const tx = (map, r, m) => { const x = textured(map, r, m, .002); x.userData.shared = true; return x; };
+  const set = {
+    desert: () => tx(camo(["#b49a6a", "#9b8156", "#cdb88c", "#7d6845"], 110, false), .7, .05),
+    arctic: () => tx(camo(["#d9dde0", "#b7bec4", "#8c959c", "#eef1f3"], 420, true), .55, .1),
+    night: () => plain(0x141a2a, .35, .55),
+    forest: () => tx(camo(["#4a5a3a", "#33402a", "#6b7a4f", "#262d1e"], 110, false), .7, .05),
+    crimson: () => tx(camo(["#5a0f12", "#8a1a1e", "#2a0708", "#b0302a"], 300, false), .4, .3),
+    gold: () => plain(0xc9a14a, .22, .95)
+  }[name]();
+  return (FIN[name] = set);
+}
+const REPAINT = new Set(["gunmetal", "black", "olive"]);
+export function applyFinish(g, name) {
+  const m = finishMats(name); if (!m) return g;
+  const mats = new Set([...REPAINT].map(k => MAT[k]));
+  g.traverse(o => { if (o.isMesh && mats.has(o.material)) o.material = m; });
+  return g;
+}
 /* a side profile (points as [forward, up] in metres; [cx, cy, x, y] is a curve) extruded to a width, forward -> -Z */
 function profile(pts, width, mat, bevel = .003) {
   const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]);
@@ -55,8 +85,30 @@ function tube(r, len, mat, fwd, up = 0, seg = 16, r2 = r) {
 function box(sx, sy, sz, mat, fwd, up, x = 0) { const m = new THREE.Mesh(new RoundedBoxGeometry(sx, sy, sz, 1, Math.min(sx, sy, sz) * .25), mat); m.position.set(x, up, -fwd); m.castShadow = true; return m; }
 
 /* how far the muzzle is in front of the grip, for the flash and the tracer */
-export const MUZZLE = { knife: .22, ak: .8, m4: .74, aug: .58, awp: 1.04 };
+export const MUZZLE = { knife: .22, ak: .8, m4: .74, aug: .58, awp: 1.04, glock: .19, usp: .33, deagle: .25, mp9: .34, mac10: .22, nova: .82, he: .05, flash: .05, smoke: .05, molotov: .1, c4: .1,
+  p250: .19, cz75: .19, fiveseven: .19, tec9: .3, mp7: .36, ump: .3, p90: .32, galil: .8, famas: .62, m4a1s: .95, sg553: .62, ssg08: .9, xm1014: .82, negev: .95, zeus: .1, decoy: .05 };
+/* the rest of the arsenal (2026-11-14): each built on the nearest gun above, with the parts that tell it apart */
+const VARIANT = { p250: "glock", cz75: "glock", fiveseven: "glock", tec9: "mac10", mp7: "mp9", ump: "mac10", galil: "ak", famas: "aug", m4a1s: "m4", sg553: "aug", ssg08: "awp", xm1014: "nova", negev: "m4" };
+function variant(w, g) {
+  const add = m => g.add(m);
+  if (w === "p250") add(box(.03, .036, .19, MAT.steel, .005, .04));                                   // a bright steel slide
+  else if (w === "fiveseven") add(box(.03, .036, .19, MAT.olive, .005, .04));                         // the sand-coloured slide
+  else if (w === "cz75") { add(box(.03, .036, .19, MAT.gunmetal, .005, .04)); add(profile([[-.085, -.1], [-.035, -.1], [-.04, -.15], [-.088, -.15]], .026, MAT.black)); }   // longer magazine
+  else if (w === "tec9") { add(tube(.008, .12, MAT.steel, .25, .035)); g.scale.set(.85, .85, .85); }   // long thin barrel, small frame
+  else if (w === "mp7") { add(box(.014, .014, .16, MAT.black, .06, .095)); add(box(.012, .05, .012, MAT.black, -.3, .02)); }
+  else if (w === "ump") { add(box(.045, .05, .22, MAT.black, -.2, .02)); g.scale.set(1.2, 1.15, 1.15); }   // a full stock, a bigger box
+  else if (w === "galil") add(profile([[.26, .0], [.46, .006], [.465, .058], [.26, .066]], .054, MAT.black));   // black handguard over the wood
+  else if (w === "famas") { add(box(.02, .03, .3, MAT.black, .05, .13)); add(box(.012, .05, .012, MAT.black, -.07, .1)); add(box(.012, .05, .012, MAT.black, .17, .1)); }   // the carry handle
+  else if (w === "m4a1s") { add(tube(.02, .2, MAT.black, .84, .034)); }                                // the suppressor
+  else if (w === "sg553") { add(tube(.022, .18, MAT.black, .05, .14)); add(tube(.026, .002, MAT.glass, .14, .14)); }   // its scope
+  else if (w === "ssg08") g.scale.set(.86, .82, .82);                                                   // a lighter bolt gun than the AWP
+  else if (w === "xm1014") { add(profile([[.3, -.01], [.5, -.01], [.5, .04], [.3, .04]], .042, MAT.black)); add(box(.02, .03, .32, MAT.gunmetal, .45, .075)); }   // black fore-end, heat shield
+  else if (w === "negev") { add(box(.07, .1, .12, MAT.olive, .14, -.06)); add(tube(.011, .3, MAT.steel, .86, .034));
+    for (const x of [-.03, .03]) { const l = tube(.006, .16, MAT.black, .55, -.06); l.rotation.set(0, 0, x > 0 ? .5 : -.5); l.position.x = x; add(l); } }   // box magazine, long barrel, bipod
+  return g;
+}
 export function gunModel(w) {
+  if (VARIANT[w]) return variant(w, gunModel(VARIANT[w]));
   const g = new THREE.Group(), add = m => g.add(m);
   if (w === "knife") {
     add(profile([[0, -.012], [.16, -.012], [.215, .004], [.17, .016], [.0, .016]], .005, MAT.blade, .0015));
@@ -98,6 +150,53 @@ export function gunModel(w) {
     add(tube(.034, .002, MAT.glass, .262, .135)); add(box(.03, .03, .05, MAT.black, .06, .09));                                     // lens, mount
     add(tube(.012, .03, MAT.black, .04, .175)); { const t2 = tube(.012, .03, MAT.black, .04, .135); t2.rotation.set(0, 0, Math.PI / 2); t2.position.x = .04; add(t2); }   // turrets
     const bolt = tube(.006, .07, MAT.steel, -.02, .07); bolt.rotation.set(0, 0, Math.PI / 2); bolt.position.x = .035; add(bolt); add(box(.02, .02, .02, MAT.steel, -.02, .07, .07));
+  } else if (w === "glock" || w === "usp") {   // polymer pistols: slide over frame, the USP-S with its long suppressor
+    add(profile([[-.09, .022], [.1, .022], [.1, .058], [-.085, .058]], .028, w === "usp" ? MAT.gunmetal : MAT.black));            // slide
+    add(profile([[-.09, 0], [.1, 0], [.1, .022], [-.09, .022]], .026, MAT.black));                                                  // frame
+    add(profile([[-.07, .002], [-.018, .002], [-.035, -.108], [-.088, -.104]], .03, MAT.black));                                     // grip
+    add(profile([[-.015, .0], [.035, .0], [.035, -.03], [-.015, -.03]], .008, MAT.black, .002));                                     // trigger guard
+    add(box(.008, .012, .008, MAT.black, .09, .064)); add(box(.012, .01, .008, MAT.black, -.075, .064));                            // sights
+    if (w === "usp") { add(tube(.016, .15, MAT.black, .175, .04)); add(tube(.017, .004, MAT.gunmetal, .1, .04)); }                   // suppressor
+  } else if (w === "deagle") {   // the heavy one: a long steel slide, a thick barrel, a big grip
+    add(profile([[-.11, .024], [.15, .024], [.15, .074], [-.105, .074]], .034, MAT.steel));
+    add(profile([[-.11, 0], [.15, 0], [.15, .024], [-.11, .024]], .03, MAT.gunmetal));
+    add(profile([[-.085, .002], [-.025, .002], [-.045, -.12], [-.105, -.116]], .036, MAT.black));
+    add(profile([[-.02, .0], [.04, .0], [.04, -.035], [-.02, -.035]], .009, MAT.gunmetal, .002));
+    add(box(.012, .03, .03, MAT.steel, .14, .055)); add(box(.01, .014, .01, MAT.black, .14, .082)); add(box(.014, .012, .01, MAT.black, -.095, .082));
+  } else if (w === "mp9") {   // compact polymer SMG: grip magazine, a vertical foregrip, a thin folding stock
+    add(profile([[-.08, 0], [.17, 0], [.17, .06], [-.08, .06]], .045, MAT.black));
+    add(profile([[.0, .002], [.045, .002], [.03, -.17], [-.012, -.168]], .032, MAT.black));                                          // grip with the magazine
+    add(profile([[.11, .002], [.14, .002], [.135, -.075], [.11, -.075]], .028, MAT.black));                                          // foregrip
+    add(box(.012, .012, .2, MAT.gunmetal, -.18, .03, 0)); add(box(.01, .06, .012, MAT.gunmetal, -.28, .01));                       // stock
+    add(tube(.009, .1, MAT.steel, .22, .03)); add(box(.02, .016, .12, MAT.gunmetal, .04, .07));                                    // barrel, rail
+  } else if (w === "mac10") {   // a steel box with a grip magazine and a short barrel
+    add(box(.05, .07, .2, MAT.gunmetal, .04, .03)); add(box(.04, .012, .16, MAT.black, .04, .072));
+    add(profile([[-.02, .002], [.022, .002], [.012, -.17], [-.03, -.168]], .03, MAT.black));
+    add(tube(.01, .08, MAT.steel, .17, .035)); add(box(.012, .03, .012, MAT.gunmetal, -.07, .05));
+  } else if (w === "nova") {   // pump shotgun: long barrel over the tube magazine, the pump on it, a full stock
+    add(profile([[-.06, 0], [.2, 0], [.2, .06], [-.06, .06]], .05, MAT.black));
+    add(profile([[-.06, .055], [-.06, .004], [-.36, -.06], [-.42, -.07], [-.42, .04], [-.33, .05]], .045, MAT.black));             // stock
+    add(profile([[.0, .002], [.04, .002], [.02, -.1], [-.022, -.098]], .03, MAT.black));                                             // grip
+    add(tube(.012, .6, MAT.steel, .5, .045)); add(tube(.012, .44, MAT.gunmetal, .42, .015));                                        // barrel, magazine tube
+    add(profile([[.3, -.01], [.5, -.01], [.5, .04], [.3, .04]], .04, MAT.woodDark));                                                 // the pump
+    add(box(.008, .012, .008, MAT.steel, .79, .062));
+  } else if (w === "he") {   // fragmentation: an olive egg, its spoon and pin
+    const b = new THREE.Mesh(new THREE.SphereGeometry(.034, 14, 10), MAT.olive); b.scale.set(1, 1.15, 1); add(b);
+    add(box(.012, .05, .016, MAT.gunmetal, -.01, .03)); add(tube(.008, .008, MAT.steel, 0, .052));
+  } else if (w === "flash" || w === "smoke") {   // a can: bright steel for the flash, grey with a band for the smoke
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(.026, .026, .1, 14), w === "flash" ? MAT.steel : MAT.gunmetal); add(c);
+    add(box(.012, .05, .016, MAT.gunmetal, -.01, .045)); if (w === "smoke") add(new THREE.Mesh(new THREE.CylinderGeometry(.027, .027, .018, 14), MAT.black));
+  } else if (w === "zeus") {   // the taser: a short yellow-and-black body
+    add(profile([[-.06, 0], [.12, 0], [.12, .05], [-.06, .05]], .03, MAT.black)); add(box(.032, .02, .1, MAT.olive, .05, .03));
+    add(profile([[-.05, .002], [-.01, .002], [-.025, -.09], [-.065, -.088]], .028, MAT.black));
+  } else if (w === "decoy") {   // a small grey can with a band
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, .08, 12), MAT.gunmetal); add(c); add(new THREE.Mesh(new THREE.CylinderGeometry(.023, .023, .012, 12), MAT.olive));
+  } else if (w === "c4") {   // the bomb in hand: a charge with its keypad and wires
+    add(box(.07, .14, .2, MAT.olive, 0, 0)); add(box(.075, .04, .09, MAT.black, .03, .07)); add(box(.02, .02, .2, MAT.steel, 0, -.06, .04));
+  } else if (w === "molotov") {   // a bottle with a rag in its neck
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(.03, .032, .12, 14), MAT.glass); add(b);
+    const nk = new THREE.Mesh(new THREE.CylinderGeometry(.011, .02, .06, 10), MAT.glass); nk.position.y = .09; add(nk);
+    const rag = new THREE.Mesh(new THREE.CylinderGeometry(.013, .009, .06, 8), MAT.woodDark); rag.position.y = .13; add(rag);
   }
   return g;
 }
@@ -174,7 +273,7 @@ export function soldier(team) {
   let held = null;
   return {
     root, head,
-    setWeapon(w) { if (held === w) return; held = w; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = gunModel(w); m.scale.setScalar(1.05); mount.add(m); },
+    setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w), fin); m.scale.setScalar(1.05); mount.add(m); },
     /* speed in m/s, phase grows with distance walked, duck 0..1, pitch in radians */
     pose(speed, phase, duck, pitch) {
       const k = Math.min(1, speed / 4.5), sw = Math.sin(phase) * .6 * k;

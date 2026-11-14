@@ -16,7 +16,12 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **`game.js` is the client.** It predicts the local player by running `sim.js` on its own inputs, corrects itself when a
   snapshot disagrees (replaying the commands the server has not acknowledged yet), and draws everyone else
   interpolated about 100 ms in the past. It also does rendering, sound, the HUD, the menu, settings and touch controls.
-- **`models.js`** builds the soldiers and guns procedurally (no model files). **`index.html`** holds the page, the
+- **Modes, grenades and the bomb are the server's alone.** Deathmatch and Competitive (money, buying, the C4, rounds,
+  halftime, votes) live in `server.js`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
+  lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `game.js`: change
+  both.
+- **`models.js`** builds the soldiers and guns procedurally (no model files); most guns are a close relative's model
+  with the parts that tell them apart (`VARIANT`). Weapon finishes repaint a gun's body materials (`applyFinish`). **`index.html`** holds the page, the
   menu and all CSS.
 - **Maps** (`maps/<id>.json`) point to a visual mesh, a phone visual and a collision mesh, plus a scale. The server
   loads every map in its list once; the public room rotates through `maps/rotation.json`.
@@ -31,7 +36,10 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 3. **Do not send what a player should not know.** Snapshots are built per viewer: an enemy's position is sent only with
    line of sight, when very close, or briefly after being seen; unseen running enemies are sent as footsteps only.
    Enemy health is never sent. A new piece of state needs the same thought.
-4. **Measure netcode, do not eyeball it.** `server/nettest.mjs` connects protocol-level clients with simulated latency
+4. **Every player-state field lives in four places.** `newPlayer` and `copyPlayer` in `sim.js`, the snapshot's `me` in
+   `server.js`, and the reconcile in `game.js`. Miss one and prediction drifts, or a copied array is shared between the
+   prediction and the server's state. `copyPlayer` copies arrays and objects, never shares them.
+5. **Measure netcode, do not eyeball it.** `server/nettest.mjs` connects protocol-level clients with simulated latency
    (`FAKE_LAG_MS`) and reports hit registration and prediction error. Run it after touching movement, weapons or the tick.
 
 ## Traps already hit (do not relearn them)
@@ -51,14 +59,32 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   climb out of are not detected yet: that is why K (respawn if stuck) exists.
 - **Phones are a different machine.** They load a lighter visual (`visualMobile`), start without shadows, and judge
   performance by real frame time. Test touch in landscape: a look-drag that starts on a button presses it.
+- **The HUD ignores the pointer.** `#hud` has `pointer-events: none` so overlays never block play; a panel with
+  buttons (buy, radio, vote) needs `pointer-events: auto`, and on phones a z-index above `#touch`, which comes later in
+  the page and covers everything.
+- **A touch button acts through `press()` in `game.js`.** Its `data-key` does nothing until `press()` handles that code.
+- **One writer per element.** Two places setting the same button each frame means the later one always wins: decide it
+  in one place.
+- **Grenades can leave the map.** A steep throw clears low walls; the server logs it and drops the grenade. Tests that
+  throw should aim into the map.
 - **Headless test browsers join the game.** A test that is killed by a timeout can leave its browser running and
   connected as a phantom player. Close test browsers explicitly.
 
 ## Testing a change
 
+- `node server/feeltest.mjs`: the weapons and movement in `sim.js` against CS's numbers (damage and armour, spray and
+  recovery, tagging, falloff, wallbangs, bursts, the Zeus, landing and bunny hops) and that prediction replays exactly.
+  No server needed.
+- With a test server running: `server/nadetest.mjs` (all grenades through the protocol), `server/comptest.mjs` (a
+  Competitive match with bots: buying, plants, defuses, halftime), `server/nettest.mjs` (hit registration).
+
 - Run the server (`cd server && npm install && node server.js`), open `http://127.0.0.1:8945/`.
 - `?autoplay&debug` starts a game straight away and exposes debug state, for scripted tests.
 - Server settings: `PORT` (default 8945), `DAILY_PERIOD` (seconds per map in the public room's rotation, default 3600).
+- Competitive test settings: `FREEZE`, `ROUND_TIME`, `BOMB_TIME`, `HALF`, `TO_WIN`, `START_MONEY` (shorter matches),
+  `BOMB_TO=<name>` (who carries the bomb), `TEST_PLANT=1` (a bomb already on A), `TEST_BOTS=ct,t` (bots per side),
+  `DEBUG_COMP=1` (logs the carrier). In a browser, `?autoplay&debug` exposes `window.__g`; `__g.corr()` is the largest
+  prediction correction seen, which should stay at 0 without other players.
 - Test-only server settings (never in production): `FAKE_LAG_MS`, `DM_TIME`, `ROUND_TIME`, `TO_WIN`, `SPAWN_AT=<weapon>`,
   `DEBUG_BOTS=1` (logs what bots decide every 30 s; an empty room pauses, so keep a client connected).
 - Check both a desktop browser and a phone (or a touch emulator in landscape).

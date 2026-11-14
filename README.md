@@ -8,12 +8,21 @@ No install: open a link and play, on desktop or phone.
 - **Netcode in the Counter-Strike tradition:** an authoritative 64-tick server, client-side prediction and
   reconciliation, interpolation of other players, and lag compensation (the server rewinds to what the shooter saw).
   `server/nettest.mjs` measures hit registration under simulated latency.
-- **Source-style movement and weapons:** knife, AK-47, M4A1, AUG (2x scope), AWP (4x/9x scope), spray patterns, a shared
-  seeded spread that client and server agree on, pickups (weapons, ammo, kevlar, bandages).
+- **CS weapons and their feel:** 32 items with CS:GO's damage, armour penetration and range falloff: pistols (Glock-18,
+  USP-S, P250, Five-SeveN, Tec-9, CZ75-Auto, Desert Eagle), SMGs (MP9, MAC-10, MP7, UMP-45, P90), shotguns (Nova,
+  XM1014), rifles (Galil AR, FAMAS, AK-47, M4A4, M4A1-S, SG 553, AUG, SSG 08, AWP), the Negev, the Zeus x27, the knife.
+  A spray pattern per gun, spread that builds while spraying and recovers, tagging, wallbangs through thin walls, head,
+  chest, stomach, arm and leg zones, CS armour and helmets, burst fire on the Glock and FAMAS.
+- **Grenades:** HE, flashbang, smoke, molotov and decoy, thrown, lobbed or bounced with real physics. Smoke blocks sight
+  (for bots and for what the server sends), fire burns for 7 seconds and smoke puts it out.
+- **Two modes:** Deathmatch, and Competitive: CS's short match with money, a buy menu, two bomb sites placed on every
+  map automatically, the C4 planted and defused, round pay, halftime, spectating teammates after death, and votes.
+- **Movement:** Source-style running, air strafing and crouching, CS's landing slowdown, bunny hops and crouch-jumps.
 - **Generated worlds:** maps made with Tencent HY-World, turned into a playable map (collision, phone version, spawns,
   bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room rotates through `maps/rotation.json`.
-- **Bots** that strafe, take cover, flank and heal; private rooms with a 4-letter code; a leaderboard per map;
-  touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair).
+- **Bots** at four difficulties that strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
+  team chat, radio calls and pings; a damage report and assists; private rooms with a 4-letter code; a leaderboard per
+  map; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
 
 ## Run it
 
@@ -68,7 +77,8 @@ keep multiplayer correct, and traps already hit.
 index.html, game.js     the page and the client (rendering, input, prediction, HUD, menu)
 sim.js                  the simulation shared by client and server (movement, collision, weapons, navigation)
 models.js               player and weapon models
-server/server.js        the authoritative game server (rooms, bots, lag compensation, static files)
+server/server.js        the authoritative game server (rooms, modes, bots, grenades, lag compensation, static files)
+server/*test.mjs        tests: netcode (nettest), weapons and movement (feeltest), grenades (nadetest), Competitive (comptest)
 maps/                   map definitions and their meshes
 tools/                  the map pipeline
 vendor/                 three.js, three-mesh-bvh, spark
@@ -76,8 +86,10 @@ vendor/                 three.js, three-mesh-bvh, spark
 
 ## Controls
 
-WASD move, mouse aim and fire, Space jump, C crouch, Shift walk, R reload, 1/3/Q weapons, right click zoom, E pick up,
-Tab scores, K respawn if stuck. Phones get a touch stick and buttons.
+WASD move, mouse aim and fire, Space jump, C crouch, Shift walk, R reload, 1 primary, 2 pistol, 3 knife (twice for the
+Zeus), 4 grenades, 5 the bomb, Q last weapon, right click zoom (lob a grenade, burst on the Glock and FAMAS), E pick up or
+defuse, F inspect, B buy, Y and U chat, Z radio, middle click mark a spot, Tab scores, K respawn if stuck. Phones get a
+touch stick and buttons for all of it.
 
 ## License
 
