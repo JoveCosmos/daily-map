@@ -254,6 +254,11 @@ body.touch #nades{bottom:54px}
 #flashw{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
 #tNade{right:calc(5vw + 168px + env(safe-area-inset-right));bottom:calc(28vh + 96px)}
 #radar{position:absolute;left:14px;top:14px;width:160px;height:160px;border-radius:14px;background:var(--hud);border:1px solid var(--line);pointer-events:none}
+/* phones: the kill feed sits under the score bar (which reaches the right edge on narrow phones), right of Knife and above
+   Reload: 3 rows, long lines cut with an ellipsis */
+body.touch #feed{top:58px;right:calc(16px + env(safe-area-inset-right));max-width:calc(5vw + 144px);font-size:11px}
+body.touch #feed div{padding:3px 7px;max-width:100%;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.touch #feed div:nth-child(n+4){display:none}
 body.touch #radar{top:76px;left:calc(12px + env(safe-area-inset-left));width:104px;height:104px}
 body:not(.playing) #radar{display:none}
 #kc .kdm{display:flex;flex-wrap:wrap;gap:4px 14px;font:600 12px ui-sans-serif,system-ui;color:#a9b7b0;margin-top:2px}#kc .kdm b{color:#fff}
@@ -275,7 +280,7 @@ body.touch #money{top:186px;left:calc(12px + env(safe-area-inset-left));font-siz
 body.touch #buy{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
 #clock.bomb{color:var(--red);letter-spacing:.08em}
 #nades .c4{color:var(--amber)}#nades .c4.on{color:#fff}#nades .kit{color:#9cc6ff}
-#tC4{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 30px)}#tBuy{left:calc(116px + env(safe-area-inset-left));top:12px}
+#tC4{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 30px)}#tBuy{left:calc(124px + env(safe-area-inset-left));top:128px}
 #spec{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);display:flex;gap:12px;align-items:baseline;padding:8px 14px;border-radius:10px;background:var(--hud);border:1px solid var(--line);font:700 15px ui-sans-serif,system-ui;color:#fff;pointer-events:none;white-space:nowrap}
 #spec[hidden]{display:none}#spec small{font:600 11px ui-sans-serif,system-ui;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}#spec span{font:600 12px ui-monospace,monospace;color:#a9b7b0}
 .priv .botn{grid-column:1}.priv .cyc{min-width:0;height:30px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#d7dfda;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer}
@@ -299,10 +304,10 @@ body.touch #chat{bottom:auto;top:200px;width:42vw;font-size:11px}
    the right off screen (2026-11-14) */
 @media (max-height:520px) and (orientation:landscape){.keys .pad{left:auto;right:0;top:calc(100% + 10px);width:min(380px,60vw)}}
 /* phones (2026-11-14): the radio next to Buy, menus kept on screen, votes answered by a tap, text clear of each other */
-#tRadio{left:calc(168px + env(safe-area-inset-left));top:12px}
+#tRadio{left:calc(124px + env(safe-area-inset-left));top:76px}   /* beside the radar: the top row meets the score bar on narrow phones */
 body.touch #radio{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
 body.touch #chatin{bottom:auto;top:12px;left:50%;transform:translateX(-50%);width:min(420px,60vw)}
-body.touch #chat{top:210px}
+body.touch #chat{top:210px;width:calc(50vw - 80px)}   /* lines end before the centred Pick up button */
 #msg.low{top:max(36%,160px)}
 #vote{pointer-events:auto}#vote .vb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 #vote .vb button{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;font:700 13px ui-sans-serif,system-ui;cursor:pointer}
@@ -313,6 +318,11 @@ body.touch #bhint{display:none!important}   /* phones have the Buy button */
 body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:min(300px,46vw);padding:10px 12px}   /* phones: under the score bar, clear of Fire */
 #tInspect{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 168px)}   /* beside Knife, clear of the score bar */
 #tKnife{right:calc(5vw + 168px + env(safe-area-inset-right));bottom:calc(28vh + 162px)}   /* above Nade */
+@media (max-height:370px){   /* short phones (360 and under): Knife and Look leave the column above Nade, which reaches the score bar */
+  body.touch #feed{top:54px}body.touch #feed div:nth-child(n+3){display:none}
+  #tKnife{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 96px)}
+  #tInspect{right:calc(5vw + 304px + env(safe-area-inset-right));bottom:calc(28vh + 96px)}
+}
 </style>
 <script type="importmap">
 { "imports": {
