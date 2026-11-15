@@ -29,6 +29,9 @@ body.dead canvas{filter:grayscale(.85) contrast(1.15) brightness(.8)}
 #fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none}
 #kc{position:absolute;left:50%;bottom:16%;width:340px;transform:translateX(-50%);padding:16px 18px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:rgba(10,12,13,.78);backdrop-filter:blur(10px);box-shadow:0 18px 50px rgba(0,0,0,.5);display:grid;gap:10px;animation:kcIn .45s .35s both cubic-bezier(.2,.9,.3,1)}
 #kc[hidden]{display:none}
+#kc.after{animation:kcout 2s ease-in forwards;pointer-events:none}#kc.after .rs{display:none}   /* after respawn: readable a moment longer, then fading */
+@keyframes kcout{0%,50%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){#kc.after{animation:none}}
 #kc .kl{font:700 10.5px ui-monospace,monospace;letter-spacing:.24em;text-transform:uppercase;color:#ef5b4b}
 #kc .kn{display:flex;align-items:center;gap:10px;font:800 24px/1.1 ui-sans-serif,system-ui;letter-spacing:-.01em;white-space:nowrap;overflow:hidden}
 #kc .kn.ct{color:#9cc6ff}#kc .kn.t{color:#ffd27a}
@@ -37,7 +40,6 @@ body.dead canvas{filter:grayscale(.85) contrast(1.15) brightness(.8)}
 #kc .km b{color:#fff;font-weight:700}
 #kc .bar2{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
 #kc .bar2 i{display:block;height:100%;border-radius:3px}
-#kc .khp{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:10px;font:600 12px ui-sans-serif,system-ui;color:#a9b7b0}
 #kc .rs{display:grid;gap:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,.07);font:600 11px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:#cfe0d8}
 #kc .rs .bar2 i{background:#7ee0bf;width:0}
 @keyframes kcIn{from{opacity:0;transform:translate(-50%,18px)}}
@@ -261,7 +263,6 @@ body.touch #feed div{padding:3px 7px;max-width:100%;box-sizing:border-box;white-
 body.touch #feed div:nth-child(n+4){display:none}
 body.touch #radar{top:76px;left:calc(12px + env(safe-area-inset-left));width:104px;height:104px}
 body:not(.playing) #radar{display:none}
-#kc .kdm{display:flex;flex-wrap:wrap;gap:4px 14px;font:600 12px ui-sans-serif,system-ui;color:#a9b7b0;margin-top:2px}#kc .kdm b{color:#fff}
 #feed small.tg{padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.1);color:#d9dee0;font-weight:600;letter-spacing:.02em}
 .priv .seg2.full{grid-column:1/-1}
 /* Competitive (2026-11-14): money under the radar, the plant/defuse bar, the buy menu, BOMB on the clock */

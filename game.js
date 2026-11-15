@@ -496,12 +496,14 @@ function hurtFrom(id) { const o = others.get(id); if (!o) return; const d = o.mo
   const el = $("dmgdir"); el.style.transform = `translate(-50%,-50%) rotate(${-a}rad)`; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = 0, 900); }
 let killerId = 0, myStep = 0, myDeath = null, wasAlive = true, diedAt = -9, deathEye = 1.6, deathRoll = .4;
 /* dying: the view drops and rolls to the floor, colour drains, sound muffles, then the camera finds the killer and a card
-   says who, with what, from how far and how hurt they are; on respawn the world fades back in from black */
-/* what passed between you and your killer this life, as CS's damage report, plus what you did to everyone else */
-function dmgReport(kid) {
-  const g = LIFE.given.get(kid) || { d: 0, n: 0 }, t = LIFE.taken.get(kid) || { d: 0, n: 0 };
-  let gave = 0, took = 0; for (const [id, r] of LIFE.given) if (id !== kid) gave += r.d; for (const [id, r] of LIFE.taken) if (id !== kid) took += r.d;
-  return `<div class="kdm"><span>You hit them <b>${g.d}</b> in ${g.n}</span><span>They hit you <b>${t.d}</b> in ${t.n}</span>${took ? `<span>Others hit you <b>${took}</b></span>` : ""}${gave ? `<span>You hit others <b>${gave}</b></span>` : ""}</div>`;
+   says who, with what, and how the fight went; on respawn the world fades back in from black and the card stays a moment,
+   fading, so it can be read without a longer respawn (operator, 2026-11-15: "keep 3 and card up") */
+const KC_AFTER = 2000;
+let kcTimer = 0;
+/* the fight with your killer in one line: what you did to them, and what they had left */
+function dmgLine(kid, hp) {
+  const g = (LIFE.given.get(kid) || { d: 0 }).d;
+  return `<div class="km"><span>You hit them <b>${g}</b>${hp != null ? `, they have <b>${hp}</b> left` : ""}</span></div>`;
 }
 function onDeath() {
   diedAt = nowS(); deathEye = eye(me) || 1.6; deathRoll = (Math.random() < .5 ? -1 : 1) * (.35 + Math.random() * .2);
@@ -509,17 +511,18 @@ function onDeath() {
   const hu = $("hurt"); hu.style.transition = "box-shadow .12s"; hu.style.boxShadow = "inset 0 0 220px rgba(210,25,15,.85)";
   setTimeout(() => { hu.style.transition = "box-shadow 1.2s"; hu.style.boxShadow = "inset 0 0 260px rgba(0,0,0,.92)"; }, 180);
   const e = myDeath && myDeath.id === myId ? myDeath : null, kid = e ? e.by : killerId, ktm = (roster.get(kid) || {}).team, wn = e ? (WEAPONS[WIDS[e.g]] || {}).name || "" : "";
-  const self = kid === myId, hp = e && e.kh != null ? e.kh : null, hpc = hp > 60 ? "#5fd38a" : hp > 30 ? "#f2c14e" : "#ef5b4b";
+  const self = kid === myId, hp = e && e.kh != null ? e.kh : null;
+  clearTimeout(kcTimer); $("kc").classList.remove("after");
   $("kc").innerHTML = `<span class="kl">${self ? "You died" : "Killed by"}</span>
     <div class="kn ${ktm ? "t" : "ct"}">${esc(self ? "Your own hand" : nameOf(kid))}${e && e.h ? '<span class="hs">Headshot</span>' : ""}</div>
-    ${e && !self ? `<div class="km"><span><b>${esc(wn)}</b></span><span><b>${e.kd}</b> m away</span></div>` : ""}
-    ${!self ? dmgReport(kid) : ""}
-    ${hp != null && !self ? `<div class="khp"><span>${hp} HP left</span><span class="bar2"><i style="width:${Math.min(100, hp)}%;background:${hpc}"></i></span></div>` : ""}
+    ${e && !self ? `<div class="km"><span><b>${esc(wn)}</b>, ${e.kd} m</span></div>` : ""}
+    ${!self ? dmgLine(kid, hp) : ""}
     <div class="rs"><span id="kcrt">Respawning</span><span class="bar2"><i id="kcr"></i></span></div>`;
   $("kc").hidden = !!(GM && GM.m !== "dm"); myDeath = null;
 }
 function onRespawn() {
-  muffle(false); document.body.classList.remove("dead"); $("kc").hidden = true;
+  muffle(false); document.body.classList.remove("dead");
+  const kc = $("kc"); if (!kc.hidden) { kc.classList.add("after"); clearTimeout(kcTimer); kcTimer = setTimeout(() => { kc.hidden = true; kc.classList.remove("after"); }, KC_AFTER); }
   const hu = $("hurt"); hu.style.transition = "box-shadow .4s"; hu.style.boxShadow = "";
   const f = $("fade"); f.style.transition = "none"; f.style.opacity = .85; requestAnimationFrame(() => requestAnimationFrame(() => { f.style.transition = "opacity .45s ease-out"; f.style.opacity = 0; }));
 }
