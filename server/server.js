@@ -857,10 +857,10 @@ const server = http.createServer((req, res) => {
   // what a player's page reports about itself (phones); small, logged one line each, rate-limited
   if (p === "/diag" && req.method === "POST") { let b = ""; req.on("data", d => { if (b.length < 4000) b += d; }); req.on("end", () => { if ((diagN = diagN + 1) < 600) log("diag " + b.replace(/[\r\n]/g, " ").slice(0, 1500)); res.writeHead(204); res.end(); }); return; }
   if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
-  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3)$/.test(p) && !p.includes("..");
+  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3|models\/[\w.-]+\.glb)$/.test(p) && !p.includes("..");
   const f = path.join(ROOT, p);
   if (!ok || !f.startsWith(ROOT + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404); res.end("not found"); return; }
-  const type = MIME[path.extname(f)] || "application/octet-stream", cache = p.startsWith("/vendor/") || p.startsWith("/maps/") || p.startsWith("/sounds/") ? "public, max-age=86400" : "no-cache";
+  const type = MIME[path.extname(f)] || "application/octet-stream", cache = p.startsWith("/vendor/") || p.startsWith("/maps/") || p.startsWith("/sounds/") || p.startsWith("/models/") ? "public, max-age=86400" : "no-cache";
   // text goes out gzipped (code is several times smaller); built once per file version and kept
   if (/\.(js|html|json|css)$/.test(f) && /\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
     const st = fs.statSync(f), key = f + ":" + st.mtimeMs; let z = GZ.get(key);

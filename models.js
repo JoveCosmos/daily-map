@@ -1,6 +1,7 @@
 /* The look of things: weapons drawn as real side profiles extruded into solids (bevelled, in their own materials),
    and soldiers built as a jointed skeleton that walks, crouches, aims and holds the weapon it carries. Everything is
-   made here in code, so nothing is borrowed. Sizes are real (metres); a gun's origin is its grip, forward is -Z. */
+   made here in code, except the few guns with a public-domain model to replace theirs (IMPORTED, MODELS.md). Sizes are
+   real (metres); a gun's origin is its grip, forward is -Z. */
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
@@ -107,7 +108,49 @@ function variant(w, g) {
     for (const x of [-.03, .03]) { const l = tube(.006, .16, MAT.black, .55, -.06); l.rotation.set(0, 0, x > 0 ? .5 : -.5); l.position.x = x; add(l); } }   // box magazine, long barrel, bipod
   return g;
 }
+/* imported guns (2026-11-16): CC0 models (MODELS.md) for the guns they match, painted in our own materials so finishes
+   still apply, and fitted to the code-built gun's length and place (muzzle, top, centre line), so the grip, the hands, the
+   flash and the tracer all stay where they were. Until they load, or if one fails, the code-built gun is used. rot turns
+   the file's forward into ours (-Z); mats names each material slot of the file */
+const IMPORTED = {
+  ak: { file: "ak47.glb", rot: -Math.PI / 2, mats: { "Material": "gunmetal", "Material.001": "wood" } },
+  m4: { file: "m4.glb", rot: -Math.PI / 2, mats: { "Material": "black", "Material.001": "gunmetal", "Material.002": "black" } },
+  deagle: { file: "m1911.glb", rot: Math.PI, mats: { "Material": "gunmetal", "Material.001": "woodDark", "Material.002": "steel" } }
+};
+const LOADED = {};
+export async function loadGunModels(loader) {
+  await Promise.all(Object.entries(IMPORTED).map(async ([w, d]) => { try { LOADED[w] = fitImported(w, d, (await loader.loadAsync("models/" + d.file)).scene); } catch (e) {} }));
+  return Object.keys(LOADED);
+}
+function fitImported(w, d, scene) {
+  const code = codeGun(w), cb = new THREE.Box3().setFromObject(code); disposeTree(code);
+  bakeSkins(scene); const root = new THREE.Group(); scene.rotation.y += d.rot; root.add(scene);
+  scene.traverse(o => { if (o.isMesh) { o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; o.castShadow = true; o.geometry.userData.shared = true; } });
+  let b = new THREE.Box3().setFromObject(root); root.scale.setScalar((cb.max.z - cb.min.z) / (b.max.z - b.min.z)); root.updateMatrixWorld(true);
+  b = new THREE.Box3().setFromObject(root);
+  root.position.set((cb.min.x + cb.max.x) / 2 - (b.min.x + b.max.x) / 2, cb.max.y - b.max.y, cb.min.z - b.min.z);
+  return root;
+}
+/* a rigged file (a bolt, a slide) drawn in its rest pose as a plain mesh: a skinned mesh measures in its bind pose but draws
+   through its bones, and the two disagreed in the view (the AK came out far too big); the moving parts are animated in
+   code anyway */
+function bakeSkins(scene) {
+  scene.updateMatrixWorld(true); const v = new THREE.Vector3(), skinned = [];
+  scene.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
+  for (const o of skinned) {
+    const g = o.geometry.clone(), pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); o.applyBoneTransform(i, v); pos.setXYZ(i, v.x, v.y, v.z); }
+    g.deleteAttribute("skinIndex"); g.deleteAttribute("skinWeight"); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, o.material); m.name = o.name; m.matrix.copy(o.matrixWorld); m.matrix.decompose(m.position, m.quaternion, m.scale);
+    o.parent.remove(o); scene.add(m);
+  }
+  scene.traverse(o => { if (o.isBone) o.visible = false; });
+}
 export function gunModel(w) {
+  if (LOADED[w]) { const g = new THREE.Group(); g.add(LOADED[w].clone()); return g; }   // a holder: callers scale and turn it, the fit inside stays
+  return codeGun(w);
+}
+function codeGun(w) {
   if (VARIANT[w]) return variant(w, gunModel(VARIANT[w]));
   const g = new THREE.Group(), add = m => g.add(m);
   if (w === "knife") {
@@ -218,6 +261,65 @@ function kit(team) {
     dark: sh(M(0x111418, .25, .4)), balaclava: sh(M(0x3a3f44, .95)), lens: sh(new THREE.MeshPhysicalMaterial({ color: 0x2e4a3a, roughness: .04, metalness: .6, clearcoat: 1, emissive: 0x0a1a12 })), scarf: sh(M(0x4a3c2c, .95)) });
 }
 export const sleeveMaterial = team => kit(team).cloth;
+/* first-person arms (2026-11-16): a CC0 rig (MODELS.md) with real hands, dressed as the team's sleeves and dark gloves
+   (each triangle by the bone that moves it most), and posed in code every frame: each hand is put on the gun and turned
+   to hold it, the fingers curl round, and a two-bone solve bends the elbow so the arm reaches the hand. The file's hands
+   hang from their own control bones (its IK lived in Blender and does not export), which is what makes this possible */
+const ARMS = { scene: null };
+export async function loadArms(loader) { try { ARMS.scene = (await loader.loadAsync("models/arms.glb")).scene; } catch (e) {} return !!ARMS.scene; }
+const HANDISH = /hand|palm|f_|thumb/;
+export function makeArms(sleeve, glove) {
+  if (!ARMS.scene) return null;
+  const root = ARMS.scene; let mesh = null; root.traverse(o => { if (o.isSkinnedMesh) mesh = o; });
+  if (!mesh) return null;
+  // dress: sleeve or glove for each triangle, by the bone carrying most of its weight
+  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, idx = g.index.array, bones = mesh.skeleton.bones;
+  const top = v => { let b = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(v, k); if (x > w) { w = x; b = si.getComponent(v, k); } } return b; };
+  const a = [], h = [];
+  for (let t = 0; t < idx.length; t += 3) { let n = 0; for (let k = 0; k < 3; k++) if (HANDISH.test(bones[top(idx[t + k])].name)) n++; (n >= 2 ? h : a).push(idx[t], idx[t + 1], idx[t + 2]); }
+  g.setIndex([...a, ...h]); g.clearGroups(); g.addGroup(0, a.length, 0); g.addGroup(a.length, h.length, 1);
+  mesh.material = [sleeve, glove]; mesh.frustumCulled = false; mesh.castShadow = false;
+  const B = n => bones.find(b => b.name === n.replace(/\./g, ""));
+  const side = k => ({ up: B("upper_arm." + k), fore: B("forearm." + k), end: B("forearm." + k + "_end"), hand: B("hand." + k + ".control"),
+    fingers: ["index", "middle", "ring", "pinky"].flatMap(f => [1, 2, 3].map(i => B(`f_${f}.0${i}.${k}`))).filter(Boolean), thumb: [1, 2, 3].map(i => B(`thumb.0${i}.${k}`)).filter(Boolean) });
+  const R = side("R"), L = side("L"), rest = new Map(); for (const b of bones) rest.set(b, [b.position.clone(), b.quaternion.clone()]);
+  // each hand's own axes, measured off its knuckles: F along the fingers, N out of the palm (cross of F and the line from
+  // the little finger's knuckle to the index finger's), so a hand can be turned to a direction and a palm facing
+  root.updateMatrixWorld(true);
+  for (const [S, k] of [[R, "R"], [L, "L"]]) {
+    const inv = S.hand.matrixWorld.clone().invert(), at = n => B(n).getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+    const F = at("f_middle.01." + k).normalize(), across = at("palm_index." + k).sub(at("palm_pinky." + k)).normalize();
+    S.F = F; S.N = new THREE.Vector3().crossVectors(F, across).normalize(); if (k === "L") S.N.negate();
+  }
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), pole = new THREE.Vector3();
+  const setWorldQuat = (b, wq) => { b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(wq)); b.updateMatrixWorld(true); };
+  const turnTo = (b, from, to) => { b.getWorldQuaternion(q1); setWorldQuat(b, new THREE.Quaternion().setFromUnitVectors(from, to).multiply(q1)); };
+  const frame = (a, b) => { const c = new THREE.Vector3().crossVectors(a, b); return new THREE.Matrix4().makeBasis(a, b, c); };
+  function reach(S, T, F, N, curl, thumbCurl, poleDir) {
+    // the hand: placed, and turned so its fingers run along F with the palm toward N (both world)
+    const f = F.clone().normalize(), nn = N.clone().addScaledVector(f, -N.dot(f)).normalize();
+    const Q = new THREE.Quaternion().setFromRotationMatrix(frame(f, nn).multiply(frame(S.F, S.N).transpose()));
+    S.hand.parent.updateMatrixWorld(true); S.hand.position.copy(S.hand.parent.worldToLocal(T.clone())); setWorldQuat(S.hand, Q);
+    for (const f of S.fingers) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), curl));
+    for (const f of S.thumb) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), thumbCurl));
+    // the arm: shoulder fixed, elbow from the two lengths, bent toward the pole
+    const sh = S.up.getWorldPosition(new THREE.Vector3()), el0 = S.fore.getWorldPosition(new THREE.Vector3()), wr0 = S.end.getWorldPosition(new THREE.Vector3());
+    const la = sh.distanceTo(el0), lb = el0.distanceTo(wr0), d = v1.copy(T).sub(sh), dist = THREE.MathUtils.clamp(d.length(), Math.abs(la - lb) + 1e-4, (la + lb) * .999);
+    d.normalize(); const ca = (la * la + dist * dist - lb * lb) / (2 * la * dist), along = la * ca, up = la * Math.sqrt(Math.max(0, 1 - ca * ca));
+    pole.copy(poleDir).addScaledVector(d, -poleDir.dot(d)).normalize(); const elbow = sh.clone().addScaledVector(d, along).addScaledVector(pole, up);
+    turnTo(S.up, v2.copy(el0).sub(sh).normalize(), v3.copy(elbow).sub(sh).normalize());
+    const e1 = S.fore.getWorldPosition(new THREE.Vector3()), w1 = S.end.getWorldPosition(new THREE.Vector3());
+    turnTo(S.fore, v2.copy(w1).sub(e1).normalize(), v3.copy(T).sub(e1).normalize());
+  }
+  return { root, mesh,
+    /* r and l: { at, fingers, palm, pole } in world space, l may be null (one-handed: it hangs); o: curls */
+    pose(r, l, o = {}) {
+      for (const [b, [p, q]] of rest) { b.position.copy(p); b.quaternion.copy(q); } root.updateMatrixWorld(true);
+      reach(R, r.at, r.fingers, r.palm, o.curl ?? 1.1, o.thumb ?? .5, r.pole);
+      if (l) reach(L, l.at, l.fingers, l.palm, o.curlL ?? .9, o.thumbL ?? .3, l.pole);
+      root.updateMatrixWorld(true);
+    } };
+}
 export function soldier(team) {
   const K = kit(team), { c, cloth, vest, pants, gear, pouch, skin, boots, sole, glove } = K;
   const at = (m, x, y, z, rx = 0) => { m.position.set(x, y, z); m.rotation.x = rx; return m; };
@@ -288,4 +390,4 @@ export function soldier(team) {
     }
   };
 }
-export const disposeTree = o => o.traverse(x => { if (x.geometry) x.geometry.dispose(); });
+export const disposeTree = o => o.traverse(x => { if (x.geometry && !x.geometry.userData.shared) x.geometry.dispose(); });

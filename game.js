@@ -7,7 +7,7 @@ import { World, DT, U, DEG, clamp, newPlayer, move, weapon, eye, inaccuracy, sta
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 const gltf = () => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);   // map files are meshopt-compressed, about 17x smaller
-import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES } from "./models.js";
+import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES, loadGunModels, loadArms, makeArms } from "./models.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
@@ -134,7 +134,7 @@ function syncPickups(list) {
 }
 
 /* removal frees the GPU memory too: geometries always, materials and textures unless marked shared */
-function dispose(o) { o.traverse(x => { if (x.geometry) x.geometry.dispose(); const ms = x.material ? (Array.isArray(x.material) ? x.material : [x.material]) : [];
+function dispose(o) { o.traverse(x => { if (x.geometry && !x.geometry.userData.shared) x.geometry.dispose(); const ms = x.material ? (Array.isArray(x.material) ? x.material : [x.material]) : [];
   for (const m of ms) if (!m.userData.shared) { if (m.map && !m.map.userData.shared) m.map.dispose(); m.dispose(); } }); }
 /* ── state ───────────────────────────────────────────────────────────────────── */
 let W = null, ws = null, myId = 0, myTeam = 0, seq = 0, pending = [], connected = false;
@@ -155,7 +155,7 @@ addEventListener("keydown", e => { if (e.target && e.target.id === "name") retur
   if (e.code === "KeyF" && me.alive) inspectT = 2.2; if ((e.code === "F1" || e.code === "F2") && VOTEON) { e.preventDefault(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "vote", y: e.code === "F1" })); VOTEON = false; $("vote").innerHTML += `<p>You voted ${e.code === "F1" ? "yes" : "no"}</p>`; return; }
   if (e.code === "F1") { e.preventDefault(); DEBUG = !DEBUG; return; } if (e.code === "Tab") e.preventDefault(); keys[e.code] = true; if (e.code === "KeyR") reloadQ = true; if (e.code === "Digit1") slotQ = "p"; if (e.code === "Digit2") slotQ = "s"; if (e.code === "Digit3") slotQ = "k"; if (e.code === "Digit4") slotQ = "g"; if (e.code === "KeyQ") slotQ = "q"; if (e.code === "KeyK" && !e.repeat) unstuck(); if (["Space", "ControlLeft"].includes(e.code)) e.preventDefault(); });
 addEventListener("keyup", e => { keys[e.code] = false; });
-addEventListener("mousedown", e => { if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) mouseDown = true; if (e.button === 2) rmb = true; });
+addEventListener("mousedown", e => { if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) { mouseDown = true; dryFire(); } if (e.button === 2) rmb = true; });
 addEventListener("mouseup", e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rmb = false; });
 addEventListener("wheel", e => { if (locked) slotQ = slotQ || "q"; }, { passive: true });
 let swayX = 0, swayY = 0;
@@ -211,7 +211,7 @@ if (TOUCH) {
   T.addEventListener("touchstart", ev => { ev.preventDefault(); audio(); touchesSeen++;
     for (const t of ev.changedTouches) { const b = t.target.closest && t.target.closest(".tb");
       if (b) { b.classList.add("dn");
-        if (b.id === "tFire") { mouseDown = true; look.set(t.identifier, [t.clientX, t.clientY]); }
+        if (b.id === "tFire") { mouseDown = true; dryFire(); look.set(t.identifier, [t.clientX, t.clientY]); }
         else if (b.id === "tMenu") touchPlay(false);
         else if (b.dataset.toggle) { const c = b.dataset.toggle; keys[c] = !keys[c]; b.classList.toggle("on", keys[c]); }
         else if (b.dataset.zoom) rmb = true;
@@ -237,31 +237,46 @@ function setLocked(on) { $("play").textContent = connected ? "Resume" : "Play"; 
 document.addEventListener("pointerlockchange", () => { if (!TOUCH) setLocked(document.pointerLockElement === renderer.domElement); });
 
 /* ── sound ───────────────────────────────────────────────────────────────────── */
-let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new AudioContext(); OUT = AC.createBiquadFilter(); OUT.type = "lowpass"; OUT.frequency.value = 20000; MG = AC.createGain(); MG.gain.value = SET.vol / 100; OUT.connect(MG).connect(AC.destination); VERB = AC.createConvolver(); VERB.buffer = echoTail(1.4); VERB.connect(OUT); loadClips(); } catch (e) {} if (AC && AC.state === "suspended") AC.resume(); }
+let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new AudioContext(); OUT = AC.createBiquadFilter(); OUT.type = "lowpass"; OUT.frequency.value = 20000; MG = AC.createGain(); MG.gain.value = SET.vol / 100; OUT.connect(MG).connect(AC.destination); VERB = AC.createGain(); for (const k of ["open", "room"]) { const c = AC.createConvolver(); c.buffer = echoTail(k); ENV[k] = AC.createGain(); ENV[k].gain.value = k === "open" ? .55 : 0; VERB.connect(ENV[k]).connect(c).connect(OUT); } loadClips(); } catch (e) {} if (AC && AC.state === "suspended") AC.resume(); }
 /* where a sound comes from: other players' shots and steps are panned left/right by their bearing and dulled when
    behind you, so you can hear where a fight or a footstep is. at(pos, fn) routes every sound fn makes through a
    panner + low-pass placed for pos; your own sounds stay centred */
 /* 2026-11-16: placed in 3D (HRTF on a desktop, so in front, behind and above are heard; plain panning on a phone, which
    saves its battery), muffled when a wall stands between you and it, and sent to a short echo that grows with distance */
-let SND = null, VERB = null; const dest = () => SND || OUT;
+let SND = null, VERB = null; const dest = () => SND || OUT, ENV = { open: null, room: null, roomy: 0, next: 0 };
+/* sound takes time to arrive (343 m/s: a shot 100 m off is heard 0.3 s after it is seen) and the air dulls its top end
+   with distance (2026-11-16) */
 function at(pos, fn) { if (!AC || !pos) return fn(); const rel = pos.clone().sub(camera.position), dist = rel.length() || 1; rel.y = 0; const d = rel.length() || 1, y = camera.rotation.y;
   const right = (rel.x * Math.cos(y) - rel.z * Math.sin(y)) / d, ahead = (-rel.x * Math.sin(y) - rel.z * Math.cos(y)) / d;
   const pan = AC.createPanner(), lp = AC.createBiquadFilter(), wet = AC.createGain(); pan.panningModel = TOUCH ? "equalpower" : "HRTF"; pan.distanceModel = "linear"; pan.rolloffFactor = 0;
   if (pan.positionX) { pan.positionX.value = right; pan.positionZ.value = -ahead; } else pan.setPosition(right, 0, -ahead);
   const walled = W && dist > 1.5 && W.first(camera.position, pos.clone().sub(camera.position).normalize(), dist - .6);
-  lp.type = "lowpass"; lp.frequency.value = walled ? 1300 : ahead >= 0 ? 20000 : 20000 - 9000 * Math.min(1, -ahead);
+  lp.type = "lowpass"; lp.frequency.value = Math.min(walled ? 1300 : ahead >= 0 ? 20000 : 20000 - 9000 * Math.min(1, -ahead), 20000 / (1 + dist / 30));
   wet.gain.value = clamp(dist / 70, .05, .4) * (walled ? 1.4 : 1); pan.connect(lp).connect(OUT); lp.connect(wet); if (VERB) wet.connect(VERB);
-  SND = pan; try { fn(); } finally { SND = null; } setTimeout(() => { try { pan.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 3000); }
+  const late = dist > 6 ? AC.createDelay(1) : null; if (late) { late.delayTime.value = Math.min(.99, dist / 343); late.connect(pan); }
+  SND = late || pan; try { fn(); } finally { SND = null; } setTimeout(() => { try { if (late) late.disconnect(); pan.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); }
+/* the surroundings (2026-11-16): nine rays from the listener (eight around, one up) say how enclosed it is, and the echo
+   follows: a street or square answers a shot with a few late slaps off far walls, a room or corridor with a dense
+   reverb. Probed a few times a second; the two tails cross-fade */
+function probeEnv() { if (!AC || !W || !ENV.open) return; const now = AC.currentTime; if (now < ENV.next) return; ENV.next = now + .3;
+  let near = 0, sum = 0; const o = camera.position, v = new THREE.Vector3();
+  for (let k = 0; k < 8; k++) { v.set(Math.cos(k * Math.PI / 4), 0, Math.sin(k * Math.PI / 4)); const h = W.first(o, v, 30), dd = h ? h.distance : 30; sum += dd; if (dd < 8) near++; }
+  const roof = W.first(o, v.set(0, 1, 0), 12), roomy = clamp(near / 8 * .7 + (roof ? .45 : 0) - sum / 8 / 60, 0, 1);
+  ENV.roomy = roomy; ENV.room.gain.setTargetAtTime(roomy * .9, now, .4); ENV.open.gain.setTargetAtTime((1 - roomy) * .55, now, .4); }
 /* the echo: stereo noise falling away over len seconds, with a few early reflections, as a street or yard answers a shot */
-function echoTail(len) { const n = AC.sampleRate * len | 0, b = AC.createBuffer(2, n, AC.sampleRate);
-  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2) * .5;
-    for (const [at0, g] of [[.023, .55], [.051, .4], [.087, .3], [.131, .22]]) { const i = (at0 + c * .004) * AC.sampleRate | 0; for (let k = 0; k < 40; k++) d[i + k] += (Math.random() * 2 - 1) * g * (1 - k / 40); } }
+function echoTail(kind) { const room = kind === "room", len = room ? 1.3 : .9, n = AC.sampleRate * len | 0, b = AC.createBuffer(2, n, AC.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c);
+    if (room) { for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.6) * .45;   // a room: dense, close reflections
+      for (const [at0, g] of [[.011, .6], [.019, .5], [.029, .4], [.041, .3]]) { const i = (at0 + c * .003) * AC.sampleRate | 0; for (let k = 0; k < 30; k++) d[i + k] += (Math.random() * 2 - 1) * g * (1 - k / 30); } }
+    else { for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 6) * .06;   // the open: little diffuse sound, but slaps off far walls
+      for (const [at0, g] of [[.09, .32], [.17, .22], [.26, .15], [.41, .09]]) { const i = (at0 + c * .013) * AC.sampleRate | 0; for (let k = 0; k < 220; k++) d[i + k] += (Math.random() * 2 - 1) * g * Math.pow(1 - k / 220, 2); } } }
   return b; }
 /* recorded sound (2026-11-16): real gunshots from The Free Firearm Sound Library and airsoft reloads, both CC0 (SOUNDS.md).
    Each class of gun has two near takes (your own and close shots) and two far ones (the range's echo kept); a shot picks one
    and varies its pitch a little, so an automatic never repeats itself. Until a clip is in, the synthesized sound plays */
 const CLIPS = {}, CLIP_BASE = ["rifle_ak", "rifle_m4", "pistol_9", "pistol_45", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "sniper_3006", "sniper_300"];
-const CLIP_NAMES = [...CLIP_BASE.flatMap(b => [b + "_near1", b + "_near2", b + "_far1", b + "_far2"]), "reload_pistol_out", "reload_pistol_slide", "reload_rifle_out", "reload_rifle_in", "reload_shotgun_pump"];
+const CLIP_NAMES = [...CLIP_BASE.flatMap(b => [b + "_near1", b + "_near2", b + "_far1", b + "_far2"]), "mag_out", "mag_in", "slide", "charge", "bolt_back", "bolt_fwd", "click",
+  "step1", "step2", "step3", "step4", "step5", "step6", "boom1", "boom2", "boom3", "pop"];
 let clipsAsked = false;
 function loadClips() { if (clipsAsked || !AC) return; clipsAsked = true;
   for (const n of CLIP_NAMES) fetch("sounds/" + n + ".mp3").then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => AC.decodeAudioData(b)).then(buf => { CLIPS[n] = buf; }).catch(() => {}); }
@@ -296,7 +311,7 @@ const GUNSND = { m4a1s: { len: .12, lp: 1100, gain: .38, thump: 90 }, zeus: { le
                  usp: { len: .09, lp: 900, gain: .32, thump: 0 }, glock: { len: .1, lp: 3400, gain: .55, thump: 160 }, deagle: { len: .26, lp: 1700, gain: 1.3, thump: 75 },
                  mp9: { len: .09, lp: 3000, gain: .6, thump: 150 }, mac10: { len: .09, lp: 2700, gain: .62, thump: 140 }, nova: { len: .34, lp: 1300, gain: 1.5, thump: 60 } };
 function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (WEAPONS[w] && (WEAPONS[w].nade || WEAPONS[w].c4)) return; if (w === "knife") return swish(vol);
-  if (gunClip(w, vol, near)) { if (w === "awp" && near && !SND) setTimeout(() => playClip("reload_rifle_in", .5, 1.15), 600); return; }   // the AWP's bolt after your own shot
+  if (gunClip(w, vol, near)) { if ((w === "awp" || w === "ssg08") && near && !SND) { setTimeout(() => playClip("bolt_back", .55, 1), 420); setTimeout(() => playClip("bolt_fwd", .55, 1), 640); } return; }   // the bolt after your own shot
   if (w === "awp") return sniperSound(vol, near);
   const P = GUNSND[w]; if (!P) return shot(vol * t[0], t[1]);
   if (!AC) return; const at0 = AC.currentTime, n = AC.sampleRate * P.len | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
@@ -306,11 +321,19 @@ function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (W
 }
 /* small mechanical sounds: a magazine out and in, a grenade's pin, a draw, a landing (2026-11-14) */
 function clack(vol = .5, f = 2600) { noiseHit(vol, .035, f, 5); }
+/* reloads (2026-11-16): the real parts of a real reload, close and dry (a handgun's magazine out and in and its slide,
+   a rifle bolt's clicks), sequenced for each kind of gun over its own reload time and pitched for its size: a pistol's
+   slide, a rifle's charging handle, a sniper's bolt, a shotgun's shells one by one and then the pump */
+const RELOADS = { pistol: [["mag_out", .06, 1.08], ["mag_in", .55, 1.08], ["slide", .8, 1.06]], rifle: [["mag_out", .08, .88], ["mag_in", .52, .86], ["charge", .82, .95]],
+  smg: [["mag_out", .08, 1], ["mag_in", .55, .98], ["charge", .82, 1.12]], sniper: [["mag_out", .08, .9], ["mag_in", .45, .88], ["bolt_back", .72, 1], ["bolt_fwd", .84, 1]],
+  heavy: [["click", .05, .7], ["mag_out", .15, .75], ["mag_in", .6, .72], ["charge", .85, .8]] };
+const RELOADKIND = { glock: "pistol", usp: "pistol", p250: "pistol", cz75: "pistol", fiveseven: "pistol", tec9: "pistol", deagle: "pistol", mp9: "smg", mac10: "smg", mp7: "smg", ump: "smg", p90: "smg",
+  awp: "sniper", ssg08: "sniper", negev: "heavy" };
 function reloadSound(vol, w) { const W0 = WEAPONS[w] || {}, r = W0.reload || 2, to = dest();
-  if (W0.shell) { if (!playClip("reload_shotgun_pump", vol, 1, to)) clack(vol, 2200); return; }
-  const pistol = W0.slot === "s", out = pistol ? "reload_pistol_out" : "reload_rifle_out", inn = pistol ? "reload_pistol_slide" : "reload_rifle_in";
-  if (!playClip(out, vol, 1, to)) { clack(vol, 2200); setTimeout(() => clack(vol * 1.1, 1800), r * 550); return; }
-  setTimeout(() => playClip(inn, vol * 1.1, 1, to), r * (pistol ? 780 : 560)); }
+  if (!CLIPS.mag_in) { clack(vol, 2200); setTimeout(() => clack(vol * 1.1, 1800), r * 550); return; }
+  if (W0.shell) { const n = Math.min(4, W0.mag || 4); for (let i = 0; i < n; i++) setTimeout(() => playClip("mag_in", vol * .8, 1.4 + Math.random() * .1, to), 150 + i * W0.shell * 1000);
+    setTimeout(() => playClip("slide", vol, .72, to), 150 + n * W0.shell * 1000); return; }
+  for (const [c, at0, pitch] of RELOADS[RELOADKIND[w] || "rifle"]) setTimeout(() => playClip(c, vol, pitch * (.98 + Math.random() * .04), to), at0 * r * 1000); }
 function pinSound(vol) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g2 = AC.createGain(); o.type = "triangle"; o.frequency.setValueAtTime(3800, t); o.frequency.exponentialRampToValueAtTime(2100, t + .05); g2.gain.setValueAtTime(.18 * vol, t); g2.gain.exponentialRampToValueAtTime(.001, t + .08); o.connect(g2).connect(dest()); o.start(t); o.stop(t + .09); }
 /* the sniper: a supersonic crack, a deep chest boom, an echo rolling off the walls, and (for the shooter) the bolt cycling */
 const noiseBuf = (secs, shape) => { const n = AC.sampleRate * secs | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * shape(i / n); return b; };
@@ -325,6 +348,28 @@ function sniperSound(vol = 1, near = true) { if (!AC) return; const t = AC.curre
 }
 function swish(vol = 1) { if (!AC) return; const t = AC.currentTime, n = AC.sampleRate * .12 | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * i / n);
   const s = AC.createBufferSource(); s.buffer = b; const f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2500; const g = AC.createGain(); g.gain.value = .35 * vol; s.connect(f).connect(g).connect(dest()); s.start(t); }
+/* what bullets sound like around you (2026-11-16), made from their physics: a rifle round passing close is supersonic
+   and cracks (a sharp pressure wave, then a hiss); a pistol or SMG round whizzes past (filtered air falling in pitch
+   as it goes); a round striking near you chips the surface, and now and then whines off it; a hit on you is a dull
+   thud, on the helmet a ring of metal */
+const SUBSONIC = new Set(["glock", "usp", "p250", "cz75", "fiveseven", "tec9", "deagle", "mp9", "mac10", "mp7", "ump", "p90", "nova", "xm1014"]);
+function noiseBuf2(secs, shape) { const n = AC.sampleRate * secs | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * shape(i / n); return b; }
+function crack(vol) { if (!AC) return; const t = AC.currentTime, s = AC.createBufferSource(), n = AC.sampleRate * .004 | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = i < n / 2 ? 1 - i / (n / 2) * 2 : -1 + (i - n / 2) / (n / 2);   // an N-wave
+  s.buffer = b; const g = AC.createGain(); g.gain.value = .9 * vol; s.connect(g).connect(dest()); s.start(t);
+  const h = AC.createBufferSource(); h.buffer = noiseBuf2(.09, x => Math.pow(1 - x, 4)); const f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2500; const g2 = AC.createGain(); g2.gain.value = .35 * vol; h.connect(f).connect(g2).connect(dest()); h.start(t + .003); }
+function whiz(vol) { if (!AC) return; const t = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf2(.22, x => Math.sin(Math.PI * Math.pow(x, .6)));
+  const f = AC.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 3.5; f.frequency.setValueAtTime(3600, t); f.frequency.exponentialRampToValueAtTime(1300, t + .22);
+  const g = AC.createGain(); g.gain.value = .55 * vol; s.connect(f).connect(g).connect(dest()); s.start(t); }
+function impactSound(vol) { if (!AC) return; const t = AC.currentTime;
+  { const s = AC.createBufferSource(); s.buffer = noiseBuf2(.03, x => Math.pow(1 - x, 3)); const f = AC.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 2600 + Math.random() * 1500; f.Q.value = 1.2; const g = AC.createGain(); g.gain.value = .5 * vol; s.connect(f).connect(g).connect(dest()); s.start(t); }
+  { const s = AC.createBufferSource(); s.buffer = noiseBuf2(.07, x => Math.pow(1 - x, 4)); const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 500; const g = AC.createGain(); g.gain.value = .4 * vol; s.connect(f).connect(g).connect(dest()); s.start(t); }
+  if (Math.random() < .18) { const o = AC.createOscillator(), g = AC.createGain(), f0 = 2200 + Math.random() * 1600; o.type = "sine"; o.frequency.setValueAtTime(f0, t + .01); o.frequency.exponentialRampToValueAtTime(f0 * .45, t + .32);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09 * vol, t + .03); g.gain.exponentialRampToValueAtTime(.0005, t + .34); o.connect(g).connect(dest()); o.start(t); o.stop(t + .36); } }   // a ricochet
+function bodyHit(head) { if (!AC) return; const t = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf2(.1, x => Math.pow(1 - x, 3)); const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 380; const g = AC.createGain(); g.gain.value = .9; s.connect(f).connect(g).connect(MG || OUT); s.start(t);
+  if (head) for (const [fr, a] of [[2350, .12], [3910, .07], [5480, .05]]) { const o = AC.createOscillator(), g2 = AC.createGain(); o.frequency.value = fr; g2.gain.setValueAtTime(a, t); g2.gain.exponentialRampToValueAtTime(.0005, t + .45); o.connect(g2).connect(MG || OUT); o.start(t); o.stop(t + .46); } }   // the helmet rings
+/* pulling the trigger on an empty gun: the hammer falls on nothing */
+let dryAt = 0; function dryFire() { const W0 = WEAPONS[me.w] || {}; if (!AC || !me.alive || me.mag > 0 || me.reloadAt || W0.melee || W0.nade || W0.c4 || nowS() - dryAt < .25) return; dryAt = nowS(); playClip("click", .55, 1.5); }
 function tink(freq = 1800) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = freq; g.gain.setValueAtTime(.15, t); g.gain.exponentialRampToValueAtTime(.001, t + .12); o.connect(g).connect(dest()); o.start(t); o.stop(t + .13); }
 
 /* ── effects ─────────────────────────────────────────────────────────────────── */
@@ -424,9 +469,11 @@ function buyMenu(on) { BUY.open = on && GM && GM.m === "comp"; BUY.cat = -1; dra
 function drawBuy() {
   const el = $("buy"); el.hidden = !BUY.open; if (!BUY.open) return;
   const money = me.mo || 0, row = (n, label, price, ok) => `<button type="button" data-n="${n}" class="${ok ? "" : "no"}"><kbd>${n}</kbd><span>${esc(label)}</span>${price != null ? `<b>$${price}</b>` : ""}</button>`;
-  if (BUY.cat < 0) el.innerHTML = `<h4>Buy <small>$${money}</small></h4>` + BUYCATS.map((c, i) => row(i + 1, c[0], null, true)).join("") + `<p>${me.ib ? "B or Esc to close" : "Buying is over for this round"}</p>`;
+  // phones get real buttons to go back and to close (2026-11-16: the keyboard hints left a phone no way out)
+  const foot = back => TOUCH ? `<div class="bf">${back ? `<button type="button" data-n="0">Back</button>` : ""}<button type="button" data-n="close">Close</button></div>` : "";
+  if (BUY.cat < 0) el.innerHTML = `<h4>Buy <small>$${money}</small></h4>` + BUYCATS.map((c, i) => row(i + 1, c[0], null, true)).join("") + (TOUCH && me.ib ? "" : `<p>${me.ib ? "B or Esc to close" : "Buying is over for this round"}</p>`) + foot(false);
   else { const items = BUYCATS[BUY.cat][1].filter(it => itemPrice(it) != null);
-    el.innerHTML = `<h4>${esc(BUYCATS[BUY.cat][0])} <small>$${money}</small></h4>` + items.map((it, i) => { const p = itemPrice(it); return row(i + 1, itemName(it), p, me.ib && p <= money); }).join("") + `<p>0 back, B or Esc to close</p>`; }
+    el.innerHTML = `<h4>${esc(BUYCATS[BUY.cat][0])} <small>$${money}</small></h4>` + items.map((it, i) => { const p = itemPrice(it); return row(i + 1, itemName(it), p, me.ib && p <= money); }).join("") + (TOUCH ? foot(true) : `<p>0 back, B or Esc to close</p>`); }
 }
 function buyKey(code) {
   if (code === "Escape") return buyMenu(false);
@@ -439,7 +486,7 @@ function buyKey(code) {
 /* a button in a panel answers a click, or a tap directly (a phone's tap then skips its click, so nothing runs twice) */
 function onTap(el, fn) { el.addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) fn(b); });
   el.addEventListener("touchend", ev => { const b = ev.target.closest("button"); if (b) { ev.preventDefault(); fn(b); } }); }
-onTap($("buy"), b => buyKey("Digit" + b.dataset.n));
+onTap($("buy"), b => b.dataset.n === "close" ? buyMenu(false) : buyKey("Digit" + b.dataset.n));
 /* the two sites, marked in the world by a faint ring on the ground (their letters are on the radar, as in CS) */
 const siteMarks = [];
 function setSites(list) {
@@ -550,12 +597,14 @@ const smokeBetween = (a, b) => { for (const c of FX.sm.values()) { const ab = b.
 function noiseHit(vol, secs, lp, decay = 2) { if (!AC || vol < .02) return; const t = AC.currentTime, n = AC.sampleRate * secs | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay);
   const src = AC.createBufferSource(); src.buffer = b; const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = lp; const g = AC.createGain(); g.gain.value = vol; src.connect(f).connect(g).connect(dest()); src.start(t); }
-function boomSound(vol) { noiseHit(1.4 * vol, .9, 700, 2.2); if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(30, t + .6); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + .7); o.connect(g).connect(dest()); o.start(t); o.stop(t + .72); }
-function flashSound(vol) { noiseHit(1.1 * vol, .25, 6000, 3); }
+function boomSound(vol) { if (CLIPS.boom1) { playClip("boom" + (1 + Math.random() * 3 | 0), 1.3 * vol, .85 + Math.random() * .1); noiseHit(.5 * vol, 1.4, 260, 1.4); } else noiseHit(1.4 * vol, .9, 700, 2.2); if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(30, t + .6); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + .7); o.connect(g).connect(dest()); o.start(t); o.stop(t + .72); }
+function flashSound(vol) { if (!playClip("pop", 1.2 * vol, 1.15)) noiseHit(1.1 * vol, .25, 6000, 3); }
 const fxVol = p => clamp(1 - new THREE.Vector3(...p).distanceTo(camera.position) / 60, .05, 1);
 
 /* footsteps: a dull thud every stride at running speed (walking and crouching are silent, as in CS), quieter far away */
-function step(vol) { if (!AC || vol < .02) return; const t = AC.currentTime, n = AC.sampleRate * .07 | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 4);
+function step(vol, heavy) { if (!AC || vol < .02) return;
+  if (CLIPS.step1) { playClip("step" + (1 + Math.random() * 6 | 0), vol * (heavy ? 1.1 : .8), (heavy ? .82 : .92) + Math.random() * .16); if (heavy) playClip("step" + (1 + Math.random() * 6 | 0), vol * .6, .7); return; }   // recorded steps on stone (2026-11-16)
+  const t = AC.currentTime, n = AC.sampleRate * .07 | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 4);
   const s = AC.createBufferSource(); s.buffer = b; const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 500 + Math.random() * 200; const g = AC.createGain(); g.gain.value = .45 * vol; s.connect(f).connect(g).connect(dest()); s.start(t); }
 const stepVol = p => clamp(1 - p.distanceTo(camera.position) / 32, 0, 1);
 /* where a hit came from: a red arc around the crosshair, pointing at the shooter */
@@ -598,6 +647,7 @@ const nameOf = id => id === myId ? "You" : (roster.get(id) || {}).name || "#" + 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /* ── the weapon in hand: the real model, gloved hands and forearms holding it ── */
+let ARMS = null;   // the rigged arms once loaded (below); until then the old hands
 const glove = new THREE.MeshStandardMaterial({ color: 0x2a2520, roughness: .85 }), sleeve = new THREE.MeshStandardMaterial({ color: 0x3b4a5f, roughness: .85 });
 const HOLD = { knife: [0, null], ak: [0, .37], m4: [0, .37], aug: [0, .17], awp: [0, .3], glock: [0, .02], usp: [0, .02], deagle: [0, .02], mp9: [0, .13], mac10: [0, .1], nova: [0, .4],
                he: [0, null], flash: [0, null], smoke: [0, null], molotov: [0, null], c4: [0, null], decoy: [0, null], zeus: [0, null],
@@ -611,13 +661,31 @@ function viewModel(w) {
   const g = new THREE.Group(), m = applyFinish(gunModel(w), SET.fin); g.add(m);
   // the weapon faces away from the sun: a little of its own light instead of a lamp (point lights cost every surface)
   m.traverse(o => { o.castShadow = false; if (o.isMesh) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x2a2a2a); } });
-  handAt(g, 0, -.03, .0, [.05, -.12, .2]);
-  if (HOLD[w][1] != null) handAt(g, -.01, -.01, -HOLD[w][1], [-.1, -.13, .14]);
+  if (!ARMS) { handAt(g, 0, -.03, .0, [.05, -.12, .2]); if (HOLD[w][1] != null) handAt(g, -.01, -.01, -HOLD[w][1], [-.1, -.13, .14]); }   // the old hands until the arms are in
   return g;
 }
 const gun = new THREE.Group(); camera.add(gun); gun.scale.setScalar(.62);
 const VIEW = {}; for (const w of WIDS) { VIEW[w] = viewModel(w); VIEW[w].visible = false; gun.add(VIEW[w]); }
-function rebuildViews() { for (const w of WIDS) { gun.remove(VIEW[w]); dispose(VIEW[w]); VIEW[w] = viewModel(w); VIEW[w].visible = false; gun.add(VIEW[w]); } }
+function rebuildViews() { for (const w of WIDS) { const was = VIEW[w].visible; gun.remove(VIEW[w]); dispose(VIEW[w]); VIEW[w] = viewModel(w); VIEW[w].visible = was; gun.add(VIEW[w]); } }
+/* the arms (2026-11-16, models.js makeArms): one rig on the camera, its hands put on whatever gun is out every frame, so
+   they follow recoil, bob and sway. The shoulders sit forward under the gun, out of sight: the gun is drawn at .62 of
+   its size .42 m ahead, and arms of the same scale only reach it from there (the usual viewmodel trick) */
+const ARMSET = { scale: .72, at: new THREE.Vector3(.06, -.36, -.33), yaw: .35, right: [.03, -.07, .06],
+  rifle: { fingers: [1, .25, 0], palm: [0, 1, 0], at: hold => [-.045, -.045, -hold] }, pistol: { fingers: [.3, -.3, -1], palm: [1, 0, 0], at: () => [-.04, -.08, .03] } };
+if (!params.has("codeguns")) loadGunModels(gltf()).then(got => { if (got.length) rebuildViews(); });
+loadArms(gltf()).then(ok => { if (!ok) return; ARMS = makeArms(sleeve, glove); if (!ARMS) return;
+  ARMS.root.position.copy(ARMSET.at); ARMS.root.rotation.set(0, Math.PI + ARMSET.yaw, 0); ARMS.root.scale.setScalar(ARMSET.scale); ARMS.root.visible = false; camera.add(ARMS.root); rebuildViews(); });
+const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _cq = new THREE.Quaternion();
+function poseArms(w) {
+  const vm = VIEW[w]; ARMS.root.visible = gun.visible && !!vm && vm.visible; if (!ARMS.root.visible) return;
+  vm.updateWorldMatrix(true, false); vm.getWorldQuaternion(_q); camera.getWorldQuaternion(_cq);
+  const gd = a => new THREE.Vector3(...a).applyQuaternion(_q), cd = a => new THREE.Vector3(...a).applyQuaternion(_cq), hold = HOLD[w] && HOLD[w][1];
+  const kind = hold == null ? null : hold < .06 ? ARMSET.pistol : ARMSET.rifle;
+  const left = kind ? { at: vm.localToWorld(_v.set(...kind.at(hold)).clone()), fingers: gd(kind.fingers), palm: gd(kind.palm), pole: cd([-1, -1, .2]) }
+    : { at: camera.localToWorld(new THREE.Vector3(-.3, -.75, -.25)), fingers: cd([0, -1, 0]), palm: cd([1, 0, 0]), pole: cd([-1, -1, 0]) };   // one-handed: the left arm drops out of sight
+  ARMS.pose({ at: vm.localToWorld(_v.set(...ARMSET.right).clone()), fingers: gd([-.25, -.15, -1]), palm: gd([-1, 0, 0]), pole: cd([1, -1, .2]) }, left,
+    { curl: (WEAPONS[w] || {}).melee ? 1.05 : .9, thumb: .4, curlL: .8, thumbL: .3 });
+}   // the imported guns, once they are in (models.js IMPORTED); ?codeguns compares the old ones
 const muzzle = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   gr.addColorStop(0, "rgba(255,240,200,1)"); gr.addColorStop(.35, "rgba(255,180,80,.8)"); gr.addColorStop(1, "rgba(255,120,30,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.scale.setScalar(.12); camera.add(sp); return sp; })();
@@ -718,7 +786,10 @@ function onEvent(e) {
   if (e.k === "hit" && (e.by === myId) !== (e.id === myId)) { const b = e.by === myId ? LIFE.given : LIFE.taken, who = e.by === myId ? e.id : e.by, r = b.get(who) || { d: 0, n: 0 }; r.d += e.d; r.n++; b.set(who, r); }
   if (e.k === "spawn" && e.id === myId) { LIFE.given.clear(); LIFE.taken.clear(); }
   if (e.k === "shot" && e.id !== myId) { const a = new THREE.Vector3(...e.f), b = new THREE.Vector3(...e.t); const aw = WIDS[e.g] === "awp"; tracer(a.clone().lerp(b, .02), b, aw); at(a, () => gunSound(WIDS[e.g], clamp(1 - a.distanceTo(camera.position) / (aw ? 120 : 60), aw ? .25 : .08, .8), a.distanceTo(camera.position) < 18)); if (aw && a.distanceTo(camera.position) < 25) shake = Math.max(shake, .25);
-    flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b))))); if (e.w) puff(b, 0xb8a888, 6, .1); }
+    flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b))))); if (e.w) puff(b, 0xb8a888, 6, .1);
+    if (me.alive) { const ab = b.clone().sub(a), L = ab.length(); if (L > 1) { ab.divideScalar(L); const c = camera.position, tt = clamp(c.clone().sub(a).dot(ab), 0, L), pc = a.clone().addScaledVector(ab, tt), miss = pc.distanceTo(c);
+      if (tt > .5 && tt < L - .3 && miss < 2.5) { const v = clamp(1 - miss / 2.5, .15, 1); at(pc, () => (SUBSONIC.has(WIDS[e.g]) ? whiz : crack)(v)); } } }   // it passed you
+    if (e.w && b.distanceTo(camera.position) < 14) at(b, () => impactSound(clamp(1 - b.distanceTo(camera.position) / 14, .1, 1))); }
   else if (e.k === "melee" && e.id !== myId) { swish(clamp(1 - new THREE.Vector3(...e.f).distanceTo(camera.position) / 20, .05, .8)); }
   else if (e.k === "ammo" && e.id === myId) { tink(1000); feed("Ammo refilled"); }
   else if (e.k === "pick" && e.id === myId) { tink(1400); }
@@ -752,7 +823,7 @@ function onEvent(e) {
   else if (e.k === "roundEnd") tink(e.w === myTeam ? 1600 : 500);
   else if (e.k === "match") tink(e.w === myTeam ? 2000 : 400);
   else if (e.k === "hit") { const v = others.get(e.id); if (v) puff(v.model.g.position.clone().setY(v.model.g.position.y + (e.h ? 1.65 : 1.2)), 0x9a1010, 8, .1, .4);
-    if (e.id === myId) { hurtFrom(e.by); $("hurt").style.boxShadow = "inset 0 0 140px rgba(255,40,30,.55)"; setTimeout(() => $("hurt").style.boxShadow = "", 160); if (e.h) tink(900); } else if (e.by === myId) { tink(e.h ? 2200 : 1300); hitmark = performance.now() + 120; window.__hits = (window.__hits || 0) + 1; } }
+    if (e.id === myId) { hurtFrom(e.by); $("hurt").style.boxShadow = "inset 0 0 140px rgba(255,40,30,.55)"; setTimeout(() => $("hurt").style.boxShadow = "", 160); bodyHit(!!e.h); } else if (e.by === myId) { tink(e.h ? 2200 : 1300); hitmark = performance.now() + 120; window.__hits = (window.__hits || 0) + 1; } }
   else if (e.k === "kill") { const hs = e.h ? " hs" : ""; if (e.id === myId) { killerId = e.by; myDeath = e; }
     const tags = [e.bl && "blind", e.ns && "no scope", e.sm && "through smoke", e.pn && "wallbang"].filter(Boolean).map(t => `<small class="tg">${t}</small>`).join(" ");
     feed(`${esc(nameOf(e.by))}${e.a ? ` <small>+</small> ${esc(nameOf(e.a))}${e.fa ? " <small>(flash)</small>" : ""}` : ""} <small>${esc((WEAPONS[WIDS[e.g]] || {}).name || "")}</small> ${tags} <b>${e.h ? "&#9673;" : "&#8594;"}</b> ${esc(nameOf(e.id))}`, (e.by === myId || e.id === myId || e.a === myId ? "mine" : "") + hs); }
@@ -875,10 +946,10 @@ function render(dt) {
     if (SNDST.last && p0[0] !== me.w) clack(.3, 3200);                                  // a draw
     if (SNDST.last && p0[1] === "0" && me.reloadAt) reloadSound(.55, me.w);
     if (SNDST.last && p0[2] === "0" && me.cock) pinSound(1);
-    if (SNDST.last && p0[3] === "0" && me.landed) step(.75);                          // the landing
+    if (SNDST.last && p0[3] === "0" && me.landed) step(.75, true);                          // the landing
     SNDST.last = st; }
   if (me.alive && me.onGround && sp > 3.5) { myStep += sp * dt * 3.2; if (myStep > Math.PI) { myStep -= Math.PI; step(.5); } }
-  tickParts(dt); tickShells(dt); if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 700); tickFx(dt); drawRadar(); tickComp(dt); tickTalk();
+  tickParts(dt); tickShells(dt); probeEnv(); if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 700); tickFx(dt); drawRadar(); tickComp(dt); tickTalk();
   gun.visible = ((me.alive || nowS() - diedAt < .45) && !scoped) || !!spec; if (!me.alive) { gun.position.y -= de * .5; gun.rotation.z += de * 1.1; } muzzle.visible = flash > 0 && !W0.melee && !scoped; muzzle.material.rotation = Math.random() * 6;
   const kcam = !spec && !me.alive && nowS() - diedAt > 1.1 && others.get(killerId), fov = kcam ? 46 : (scoped ? 2 * Math.atan(Math.tan(SET.fov / 2 * DEG) * W0.zoom[me.zoom]) / DEG : SET.fov) + fovPunch * 5;
   if (Math.abs(camera.fov - fov) > .01) { camera.fov = kcam ? camera.fov + (fov - camera.fov) * Math.min(1, dt * 2.5) : fov; camera.updateProjectionMatrix(); }
@@ -920,6 +991,7 @@ function render(dt) {
   $("xh").classList.toggle("hit", pn < hitmark);
   $("dbg").textContent = DEBUG ? `quality step ${qLevel}  ping ${ping} ms  interp ${Math.round(interp * 1000)} ms  unconfirmed commands ${pending.length}\nspeed ${(sp / U).toFixed(0)} u/s ${me.onGround ? "ground" : "air"}\npos ${me.pos.x.toFixed(1)} ${me.pos.y.toFixed(2)} ${me.pos.z.toFixed(1)}  correction ${(smooth.length() * 100).toFixed(1)} cm\nothers ${others.size}` : "";
   shadowT += dt; if (shadowT > .05) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
+  if (ARMS) poseArms(me.w);
   renderer.render(scene, camera);
 }
 
@@ -986,5 +1058,5 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
   if (rj && Date.now() - rj.t < 30000) { team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
-if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, fx: () => ({ sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
+if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);
