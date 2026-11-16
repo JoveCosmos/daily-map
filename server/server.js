@@ -20,8 +20,9 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 /* ── the maps: every map a room can use, loaded once and shared by the rooms on it ─────────────────────────── */
 let diagN = 0; setInterval(() => { diagN = 0; }, 3600e3);   // /diag lines per hour
-/* the daily rotation lives in maps/rotation.json (tools/add-map.sh appends to it); the stand-in courtyard always loads */
-const ROTATION = (() => { try { const r = JSON.parse(fs.readFileSync(new URL("../maps/rotation.json", import.meta.url))).rotation; if (Array.isArray(r) && r.length) return r.filter(x => /^[a-z0-9-]+$/.test(x)); } catch (e) {} return ["market", "yard"]; })();
+/* the daily rotation lives in maps/rotation.json (tools/add-map.sh appends to it); the stand-in courtyard always loads.
+   ROTATION=standin (test only) pins the public room to it, as nettest's duel needs */
+const ROTATION = process.env.ROTATION ? process.env.ROTATION.split(",").filter(x => /^[a-z0-9-]+$/.test(x)) : (() => { try { const r = JSON.parse(fs.readFileSync(new URL("../maps/rotation.json", import.meta.url))).rotation; if (Array.isArray(r) && r.length) return r.filter(x => /^[a-z0-9-]+$/.test(x)); } catch (e) {} return ["market", "yard"]; })();
 const MAPLIST = ["standin", ...ROTATION], WORLDS = {}, MAPS = {};
 for (const id of MAPLIST) {
   const M = JSON.parse(fs.readFileSync(path.join(ROOT, "maps", id + ".json"), "utf8")); let geoms;
@@ -73,7 +74,8 @@ let DUEL = null;
 if (process.env.DUEL === "1") {
   const A = W.nodes[W.spawn[0][0]], up = p => p.clone().setY(p.y + 1.4);
   const B = W.nodes.find(n => { const d = n.p.distanceTo(A.p); return d > 12 && d < 18 && W.clear(up(A.p), up(n.p)) && (() => { const ab = n.p.clone().sub(A.p).setY(0).normalize(), side = new THREE.Vector3(-ab.z, 0, ab.x).multiplyScalar(4.5); return W.clear(up(n.p).add(side), up(A.p)) && W.clear(up(n.p).sub(side), up(A.p)) && W.clear(up(n.p), up(n.p).add(side)) && W.clear(up(n.p), up(n.p).sub(side)); })(); });
-  DUEL = [A, B || A]; log("duel spawns", A.p.toArray().map(x => x.toFixed(1)).join(","), "/", (B || A).p.toArray().map(x => x.toFixed(1)).join(","), "distance", B ? B.p.distanceTo(A.p).toFixed(1) : "none");
+  if (!B) { log(`DUEL: no clear 12-18 m lane on ${MAP_ID}; run the test server with ROTATION=standin`); process.exit(1); }   // 2026-11-16: it used to put both on one spot and every number it gave was wrong
+  DUEL = [A, B]; log("duel spawns", A.p.toArray().map(x => x.toFixed(1)).join(","), "/", B.p.toArray().map(x => x.toFixed(1)).join(","), "distance", B.p.distanceTo(A.p).toFixed(1));
 }
 function pickSpawn(e) {
   if (DUEL) return DUEL[e.team];
@@ -849,16 +851,16 @@ setInterval(() => { const i = dailyIndex(); if (i === dailyAt) return; dailyAt =
 
 /* ── files and the socket on one port ────────────────────────────────────────── */
 const GZ = new Map();
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".glb": "model/gltf-binary", ".splat": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg", ".css": "text/css" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".glb": "model/gltf-binary", ".splat": "application/octet-stream", ".png": "image/png", ".jpg": "image/jpeg", ".css": "text/css", ".mp3": "audio/mpeg" };
 const server = http.createServer((req, res) => {
   let p; try { p = decodeURIComponent((req.url || "/").split("?")[0]); } catch { res.writeHead(400); res.end("bad request"); return; } if (p === "/") p = "/index.html";
   // what a player's page reports about itself (phones); small, logged one line each, rate-limited
   if (p === "/diag" && req.method === "POST") { let b = ""; req.on("data", d => { if (b.length < 4000) b += d; }); req.on("end", () => { if ((diagN = diagN + 1) < 600) log("diag " + b.replace(/[\r\n]/g, " ").slice(0, 1500)); res.writeHead(204); res.end(); }); return; }
   if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
-  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+)$/.test(p) && !p.includes("..");
+  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3)$/.test(p) && !p.includes("..");
   const f = path.join(ROOT, p);
   if (!ok || !f.startsWith(ROOT + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404); res.end("not found"); return; }
-  const type = MIME[path.extname(f)] || "application/octet-stream", cache = p.startsWith("/vendor/") || p.startsWith("/maps/") ? "public, max-age=86400" : "no-cache";
+  const type = MIME[path.extname(f)] || "application/octet-stream", cache = p.startsWith("/vendor/") || p.startsWith("/maps/") || p.startsWith("/sounds/") ? "public, max-age=86400" : "no-cache";
   // text goes out gzipped (code is several times smaller); built once per file version and kept
   if (/\.(js|html|json|css)$/.test(f) && /\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
     const st = fs.statSync(f), key = f + ":" + st.mtimeMs; let z = GZ.get(key);

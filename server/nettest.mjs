@@ -18,7 +18,12 @@ const shooter = client("Shooter"); await sleep(400); const runner = client("Runn
 await new Promise(r => runner.ws.on("open", r)); await sleep(2600);   // past spawn protection
 let shots = 0, lastShot = 0, yaw = 0, pitch = 0, t0 = performance.now();
 const lat = [];
-const timer = setInterval(() => {
+/* one tick per DT of real time, as game.js paces its commands (2026-11-16): a bare setInterval(15.625) runs a little
+   fast in Node, the server queues what is ahead of real time, and every shot then arrived later than the one before -
+   the rewind grew 33 ms a second until it passed REWIND_MAX and shots missed for a reason no player has */
+let ticks = 0, done = false;
+const timer = setInterval(() => { while (!done && ticks * DT * 1000 <= performance.now() - t0) { ticks++; tick(); } }, 4);
+function tick() {
   const t = (performance.now() - t0) / 1000;
   // the runner: left and right, 1.1 s each way, never stopping
   // face the shooter so a strafe crosses the line of fire
@@ -35,6 +40,6 @@ const timer = setInterval(() => {
     if (t - lastShot > .35 && shooter.me.m > 0 && !shooter.me.ra) { fire = true; lastShot = t; shots++; }
   }
   shooter.send([{ seq: ++shooter.seq, f: 0, s: 0, yaw, pitch, fire, reload: shooter.me && shooter.me.m === 0, vt: +vt.toFixed(4) }]);
-  if (t > SECONDS) { clearInterval(timer); setTimeout(() => { console.log(JSON.stringify({ shots, hits: shooter.hits, hitRate: Math.round(100 * shooter.hits / Math.max(1, shots)) + "%",
+  if (t > SECONDS) { done = true; clearInterval(timer); setTimeout(() => { console.log(JSON.stringify({ shots, hits: shooter.hits, hitRate: Math.round(100 * shooter.hits / Math.max(1, shots)) + "%",
     runnerSpeedAcrossLineOfFire: (lat.reduce((a, b) => a + b, 0) / Math.max(1, lat.length)).toFixed(1) + " m/s" })); process.exit(0); }, 600); }
-}, DT * 1000);
+}

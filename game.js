@@ -237,15 +237,46 @@ function setLocked(on) { $("play").textContent = connected ? "Resume" : "Play"; 
 document.addEventListener("pointerlockchange", () => { if (!TOUCH) setLocked(document.pointerLockElement === renderer.domElement); });
 
 /* ── sound ───────────────────────────────────────────────────────────────────── */
-let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new AudioContext(); OUT = AC.createBiquadFilter(); OUT.type = "lowpass"; OUT.frequency.value = 20000; MG = AC.createGain(); MG.gain.value = SET.vol / 100; OUT.connect(MG).connect(AC.destination); } catch (e) {} if (AC && AC.state === "suspended") AC.resume(); }
+let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new AudioContext(); OUT = AC.createBiquadFilter(); OUT.type = "lowpass"; OUT.frequency.value = 20000; MG = AC.createGain(); MG.gain.value = SET.vol / 100; OUT.connect(MG).connect(AC.destination); VERB = AC.createConvolver(); VERB.buffer = echoTail(1.4); VERB.connect(OUT); loadClips(); } catch (e) {} if (AC && AC.state === "suspended") AC.resume(); }
 /* where a sound comes from: other players' shots and steps are panned left/right by their bearing and dulled when
    behind you, so you can hear where a fight or a footstep is. at(pos, fn) routes every sound fn makes through a
    panner + low-pass placed for pos; your own sounds stay centred */
-let SND = null; const dest = () => SND || OUT;
-function at(pos, fn) { if (!AC || !pos) return fn(); const rel = pos.clone().sub(camera.position); rel.y = 0; const d = rel.length() || 1, y = camera.rotation.y;
+/* 2026-11-16: placed in 3D (HRTF on a desktop, so in front, behind and above are heard; plain panning on a phone, which
+   saves its battery), muffled when a wall stands between you and it, and sent to a short echo that grows with distance */
+let SND = null, VERB = null; const dest = () => SND || OUT;
+function at(pos, fn) { if (!AC || !pos) return fn(); const rel = pos.clone().sub(camera.position), dist = rel.length() || 1; rel.y = 0; const d = rel.length() || 1, y = camera.rotation.y;
   const right = (rel.x * Math.cos(y) - rel.z * Math.sin(y)) / d, ahead = (-rel.x * Math.sin(y) - rel.z * Math.cos(y)) / d;
-  const pan = AC.createStereoPanner(), lp = AC.createBiquadFilter(); pan.pan.value = clamp(right * .9, -.9, .9); lp.type = "lowpass"; lp.frequency.value = ahead >= 0 ? 20000 : 20000 - 17500 * Math.min(1, -ahead);
-  pan.connect(lp).connect(OUT); SND = pan; try { fn(); } finally { SND = null; } setTimeout(() => { try { pan.disconnect(); lp.disconnect(); } catch (e) {} }, 3000); }
+  const pan = AC.createPanner(), lp = AC.createBiquadFilter(), wet = AC.createGain(); pan.panningModel = TOUCH ? "equalpower" : "HRTF"; pan.distanceModel = "linear"; pan.rolloffFactor = 0;
+  if (pan.positionX) { pan.positionX.value = right; pan.positionZ.value = -ahead; } else pan.setPosition(right, 0, -ahead);
+  const walled = W && dist > 1.5 && W.first(camera.position, pos.clone().sub(camera.position).normalize(), dist - .6);
+  lp.type = "lowpass"; lp.frequency.value = walled ? 1300 : ahead >= 0 ? 20000 : 20000 - 9000 * Math.min(1, -ahead);
+  wet.gain.value = clamp(dist / 70, .05, .4) * (walled ? 1.4 : 1); pan.connect(lp).connect(OUT); lp.connect(wet); if (VERB) wet.connect(VERB);
+  SND = pan; try { fn(); } finally { SND = null; } setTimeout(() => { try { pan.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 3000); }
+/* the echo: stereo noise falling away over len seconds, with a few early reflections, as a street or yard answers a shot */
+function echoTail(len) { const n = AC.sampleRate * len | 0, b = AC.createBuffer(2, n, AC.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2) * .5;
+    for (const [at0, g] of [[.023, .55], [.051, .4], [.087, .3], [.131, .22]]) { const i = (at0 + c * .004) * AC.sampleRate | 0; for (let k = 0; k < 40; k++) d[i + k] += (Math.random() * 2 - 1) * g * (1 - k / 40); } }
+  return b; }
+/* recorded sound (2026-11-16): real gunshots from The Free Firearm Sound Library and airsoft reloads, both CC0 (SOUNDS.md).
+   Each class of gun has two near takes (your own and close shots) and two far ones (the range's echo kept); a shot picks one
+   and varies its pitch a little, so an automatic never repeats itself. Until a clip is in, the synthesized sound plays */
+const CLIPS = {}, CLIP_BASE = ["rifle_ak", "rifle_m4", "pistol_9", "pistol_45", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "sniper_3006", "sniper_300"];
+const CLIP_NAMES = [...CLIP_BASE.flatMap(b => [b + "_near1", b + "_near2", b + "_far1", b + "_far2"]), "reload_pistol_out", "reload_pistol_slide", "reload_rifle_out", "reload_rifle_in", "reload_shotgun_pump"];
+let clipsAsked = false;
+function loadClips() { if (clipsAsked || !AC) return; clipsAsked = true;
+  for (const n of CLIP_NAMES) fetch("sounds/" + n + ".mp3").then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => AC.decodeAudioData(b)).then(buf => { CLIPS[n] = buf; }).catch(() => {}); }
+/* which recording each gun uses and at what pitch: one recording per class, pitched apart so guns of a class differ */
+const GUNCLIP = { ak: ["rifle_ak", 1], galil: ["rifle_ak", 1.06], sg553: ["rifle_ak", .96], negev: ["rifle_ak", .88], m4: ["rifle_m4", 1], famas: ["rifle_m4", 1.07], aug: ["rifle_m4", .95],
+  glock: ["pistol_9", 1.04], p250: ["pistol_9", .94], tec9: ["pistol_9", 1.1], cz75: ["pistol_380", .97], fiveseven: ["pistol_380", 1.08], deagle: ["pistol_45", .8],
+  mp9: ["smg_9", 1.07], mp7: ["smg_9", 1.13], p90: ["smg_9", 1.18], mac10: ["smg_ppsh", 1.05], ump: ["smg_ppsh", .92],
+  nova: ["shotgun_nova", 1], xm1014: ["shotgun_cd", 1.04], awp: ["sniper_3006", .94], ssg08: ["sniper_300", 1.06] };
+function playClip(name, vol, rate = 1, to = dest()) { const b = CLIPS[name]; if (!AC || !b) return false;
+  const s = AC.createBufferSource(); s.buffer = b; s.playbackRate.value = rate; const g = AC.createGain(); g.gain.value = vol; s.connect(g).connect(to); s.start(); return true; }
+function gunClip(w, vol, near) { const c = GUNCLIP[w]; if (!c) return false; const k = c[0] + (near ? "_near" : "_far") + (Math.random() < .5 ? 1 : 2);
+  const name = CLIPS[k] ? k : c[0] + (near ? "_near" : "_far") + 1;
+  if (!playClip(name, vol * (near ? .85 : 1.05), c[1] * (.97 + Math.random() * .06))) return false;
+  if (!SND && VERB) playClip(name, vol * .12, c[1], VERB);   // your own shot rings off the street a little too
+  return true; }
 const muffle = on => { if (OUT) OUT.frequency.setTargetAtTime(on ? 420 : 20000, AC.currentTime, on ? .06 : .3); };
 /* dying: a body-fall thud, a low drop, and a thin ringing in the ears that the muffling does not touch */
 function deathSound() { if (!AC) return; const t = AC.currentTime;
@@ -264,7 +295,9 @@ const GUNSND = { m4a1s: { len: .12, lp: 1100, gain: .38, thump: 90 }, zeus: { le
                  xm1014: { len: .3, lp: 1400, gain: 1.4, thump: 65 }, negev: { len: .12, lp: 2200, gain: .9, thump: 100 }, ssg08: { len: .2, lp: 2600, gain: 1.15, thump: 85 },
                  usp: { len: .09, lp: 900, gain: .32, thump: 0 }, glock: { len: .1, lp: 3400, gain: .55, thump: 160 }, deagle: { len: .26, lp: 1700, gain: 1.3, thump: 75 },
                  mp9: { len: .09, lp: 3000, gain: .6, thump: 150 }, mac10: { len: .09, lp: 2700, gain: .62, thump: 140 }, nova: { len: .34, lp: 1300, gain: 1.5, thump: 60 } };
-function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (WEAPONS[w] && (WEAPONS[w].nade || WEAPONS[w].c4)) return; if (w === "knife") return swish(vol); if (w === "awp") return sniperSound(vol, near);
+function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (WEAPONS[w] && (WEAPONS[w].nade || WEAPONS[w].c4)) return; if (w === "knife") return swish(vol);
+  if (gunClip(w, vol, near)) { if (w === "awp" && near && !SND) setTimeout(() => playClip("reload_rifle_in", .5, 1.15), 600); return; }   // the AWP's bolt after your own shot
+  if (w === "awp") return sniperSound(vol, near);
   const P = GUNSND[w]; if (!P) return shot(vol * t[0], t[1]);
   if (!AC) return; const at0 = AC.currentTime, n = AC.sampleRate * P.len | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
   const s = AC.createBufferSource(); s.buffer = b; const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = P.lp; const g2 = AC.createGain(); g2.gain.setValueAtTime(P.gain * vol, at0); g2.gain.exponentialRampToValueAtTime(.001, at0 + P.len);
@@ -273,7 +306,11 @@ function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (W
 }
 /* small mechanical sounds: a magazine out and in, a grenade's pin, a draw, a landing (2026-11-14) */
 function clack(vol = .5, f = 2600) { noiseHit(vol, .035, f, 5); }
-function reloadSound(vol, w) { const r = (WEAPONS[w] || {}).reload || 2, sh = (WEAPONS[w] || {}).shell; clack(vol, 2200); if (!sh) setTimeout(() => clack(vol * 1.1, 1800), r * 550); }
+function reloadSound(vol, w) { const W0 = WEAPONS[w] || {}, r = W0.reload || 2, to = dest();
+  if (W0.shell) { if (!playClip("reload_shotgun_pump", vol, 1, to)) clack(vol, 2200); return; }
+  const pistol = W0.slot === "s", out = pistol ? "reload_pistol_out" : "reload_rifle_out", inn = pistol ? "reload_pistol_slide" : "reload_rifle_in";
+  if (!playClip(out, vol, 1, to)) { clack(vol, 2200); setTimeout(() => clack(vol * 1.1, 1800), r * 550); return; }
+  setTimeout(() => playClip(inn, vol * 1.1, 1, to), r * (pistol ? 780 : 560)); }
 function pinSound(vol) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g2 = AC.createGain(); o.type = "triangle"; o.frequency.setValueAtTime(3800, t); o.frequency.exponentialRampToValueAtTime(2100, t + .05); g2.gain.setValueAtTime(.18 * vol, t); g2.gain.exponentialRampToValueAtTime(.001, t + .08); o.connect(g2).connect(dest()); o.start(t); o.stop(t + .09); }
 /* the sniper: a supersonic crack, a deep chest boom, an echo rolling off the walls, and (for the shooter) the bolt cycling */
 const noiseBuf = (secs, shape) => { const n = AC.sampleRate * secs | 0, b = AC.createBuffer(1, n, AC.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * shape(i / n); return b; };
@@ -292,11 +329,16 @@ function tink(freq = 1800) { if (!AC) return; const t = AC.currentTime, o = AC.c
 
 /* ── effects ─────────────────────────────────────────────────────────────────── */
 const tracers = [], decals = [], tracerMat = new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: .8 });
-const decalGeo = new THREE.CircleGeometry(.035, 8), decalMat = new THREE.MeshBasicMaterial({ color: 0x1a1612, transparent: true, opacity: .85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+/* a bullet hole (2026-11-16): a dark scorched core in a rough ring of chipped surface, drawn once, not a flat disc */
+const holeTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d");
+  for (let i = 0; i < 26; i++) { const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 16; g.fillStyle = `rgba(40,32,24,${.1 + Math.random() * .25})`; g.beginPath(); g.arc(32 + Math.cos(a) * r * .6, 32 + Math.sin(a) * r * .6, 2 + Math.random() * 5, 0, 7); g.fill(); }
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 20); gr.addColorStop(0, "rgba(8,6,5,1)"); gr.addColorStop(.35, "rgba(20,15,11,.95)"); gr.addColorStop(.6, "rgba(70,55,40,.45)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = gr; g.beginPath(); g.arc(32, 32, 20, 0, 7); g.fill(); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+const decalGeo = new THREE.PlaneGeometry(.085, .085), decalMat = new THREE.MeshBasicMaterial({ map: holeTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
 function tracer(a, b, heavy = false) { const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), heavy ? tracerHeavy : tracerMat); l.userData.t = performance.now() + (heavy ? 220 : 50); scene.add(l); tracers.push(l);
   if (heavy) { const n = Math.min(26, Math.max(6, a.distanceTo(b) / 1.2 | 0)); for (let i = 1; i <= n; i++) { const p = a.clone().lerp(b, i / (n + 1)); puff(p, 0xd8d4cc, 1, .16, .05); } } }
 const tracerHeavy = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .95 }); tracerHeavy.userData.shared = true;
-function decal(h, dir) { const d = new THREE.Mesh(decalGeo, decalMat); d.position.copy(h.point); const n = h.face.normal.clone(); if (n.dot(dir) > 0) n.negate(); d.position.addScaledVector(n, .005); d.lookAt(h.point.clone().add(n)); scene.add(d); decals.push(d); if (decals.length > 40) scene.remove(decals.shift()); }
+function decal(h, dir) { const d = new THREE.Mesh(decalGeo, decalMat); d.position.copy(h.point); const n = h.face.normal.clone(); if (n.dot(dir) > 0) n.negate(); d.position.addScaledVector(n, .005); d.lookAt(h.point.clone().add(n)); d.rotateZ(Math.random() * Math.PI * 2); scene.add(d); decals.push(d); if (decals.length > 40) scene.remove(decals.shift()); }
 /* small effects: dust and blood puffs, other players' muzzle flashes */
 const parts = [], dotTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 32; const g = c.getContext("2d"), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
 function puff(pos, color, n = 7, size = .12, up = 1) {
@@ -305,7 +347,32 @@ function puff(pos, color, n = 7, size = .12, up = 1) {
     sp.userData = { v: new THREE.Vector3((Math.random() - .5) * 1.6, Math.random() * 1.4 * up, (Math.random() - .5) * 1.6), life: .45 + Math.random() * .3, age: 0 }; scene.add(sp); parts.push(sp); }
 }
 function flashAt(pos) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xffc070, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(pos); sp.scale.setScalar(.35); sp.userData = { v: new THREE.Vector3(), life: .05, age: 0, flash: true }; scene.add(sp); parts.push(sp); }
+/* sparks where a bullet strikes (2026-11-16): hot points thrown off the surface, falling fast and burning out */
+let sparkN = 0;
+function sparks(pos, normal, n = 6) { sparkN += n; for (let i = 0; i < n && parts.length < 200; i++) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xffd38a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(pos); sp.scale.setScalar(.025 + Math.random() * .02);
+  const v = normal.clone().multiplyScalar(2 + Math.random() * 3).add(new THREE.Vector3((Math.random() - .5) * 3, Math.random() * 2.2, (Math.random() - .5) * 3));
+  sp.userData = { v, life: .12 + Math.random() * .16, age: 0, spark: true }; scene.add(sp); parts.push(sp); } }
+/* brass (2026-11-16): each round your gun fires throws its case out to the right; it tumbles, bounces once and lies a while */
+const shells = [], shellGeo = new THREE.CylinderGeometry(.0055, .0055, .022, 6), shellMat = new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: .9, roughness: .35 });
+function ejectShell() { if (!W) return; const m = shells.length >= 24 ? shells.shift() : new THREE.Mesh(shellGeo, shellMat);
+  const p = camera.localToWorld(GUNPOS.clone().add(new THREE.Vector3(.025, .045, -.16))), r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  m.position.copy(p); m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+  const ground = W.first(p, new THREE.Vector3(0, -1, 0), 4);
+  m.userData = { v: r.multiplyScalar(1.4 + Math.random() * .6).addScaledVector(u, 1.2 + Math.random() * .5).add(new THREE.Vector3(me.vel.x, 0, me.vel.z)), spin: new THREE.Vector3(Math.random() * 20, Math.random() * 20, Math.random() * 20),
+    floor: ground ? ground.point.y + .006 : p.y - 1.6, bounced: false, age: 0 };
+  if (!m.parent) scene.add(m); shells.push(m); }
+function tickShells(dt) { for (let i = shells.length - 1; i >= 0; i--) { const m = shells[i], u = m.userData; u.age += dt;
+  if (u.age > 6) { scene.remove(m); shells.splice(i, 1); continue; }
+  if (u.rest) continue; u.v.y -= 9.8 * dt; m.position.addScaledVector(u.v, dt); m.rotation.x += u.spin.x * dt; m.rotation.y += u.spin.y * dt; m.rotation.z += u.spin.z * dt;
+  if (m.position.y <= u.floor) { m.position.y = u.floor; if (!u.bounced && u.v.y < -1.2) { u.bounced = true; u.v.y *= -.32; u.v.x *= .5; u.v.z *= .5; u.spin.multiplyScalar(.5); brassTick(); }
+    else { u.rest = true; m.rotation.x = Math.PI / 2; } } } }
+/* a case landing: a short, quiet metallic tick, soft enough for an automatic's rain of them */
+function brassTick() { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.type = "triangle"; o.frequency.value = 5200 + Math.random() * 1400; g.gain.setValueAtTime(.035, t); g.gain.exponentialRampToValueAtTime(.0005, t + .06); o.connect(g).connect(OUT); o.start(t); o.stop(t + .07); }
+/* the muzzle lights its surroundings for a frame or two (desktop only: a phone keeps its frame rate) */
+const muzzleLight = TOUCH ? null : new THREE.PointLight(0xffb45a, 0, 7, 2); if (muzzleLight) scene.add(muzzleLight);
 function tickParts(dt) { for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i], u = p.userData; u.age += dt; if (u.age > u.life) { scene.remove(p); p.material.dispose(); parts.splice(i, 1); continue; }
+  if (u.spark) { u.v.y -= 9.8 * dt; p.position.addScaledVector(u.v, dt); p.material.opacity = 1 - u.age / u.life; continue; }
   if (!u.flash) { u.v.y -= 2.5 * dt; p.position.addScaledVector(u.v, dt); p.material.opacity = .8 * (1 - u.age / u.life); p.scale.multiplyScalar(1 + dt * 1.5); } } }
 /* ── talking (2026-11-14): chat (Y everyone, U team), the radio (Z, then a number), a ping (middle click) ─────── */
 const RADIO = ["Enemy spotted", "Need backup", "Cover me", "Go, go, go", "Fall back", "Hold this position", "Affirmative", "Negative", "Sector clear", "I'm in position"];
@@ -650,7 +717,7 @@ const LIFE = { given: new Map(), taken: new Map() };
 function onEvent(e) {
   if (e.k === "hit" && (e.by === myId) !== (e.id === myId)) { const b = e.by === myId ? LIFE.given : LIFE.taken, who = e.by === myId ? e.id : e.by, r = b.get(who) || { d: 0, n: 0 }; r.d += e.d; r.n++; b.set(who, r); }
   if (e.k === "spawn" && e.id === myId) { LIFE.given.clear(); LIFE.taken.clear(); }
-  if (e.k === "shot" && e.id !== myId) { const a = new THREE.Vector3(...e.f), b = new THREE.Vector3(...e.t); const aw = WIDS[e.g] === "awp"; tracer(a.clone().lerp(b, .02), b, aw); at(a, () => gunSound(WIDS[e.g], clamp(1 - a.distanceTo(camera.position) / (aw ? 120 : 60), aw ? .25 : .08, .8), false)); if (aw && a.distanceTo(camera.position) < 25) shake = Math.max(shake, .25);
+  if (e.k === "shot" && e.id !== myId) { const a = new THREE.Vector3(...e.f), b = new THREE.Vector3(...e.t); const aw = WIDS[e.g] === "awp"; tracer(a.clone().lerp(b, .02), b, aw); at(a, () => gunSound(WIDS[e.g], clamp(1 - a.distanceTo(camera.position) / (aw ? 120 : 60), aw ? .25 : .08, .8), a.distanceTo(camera.position) < 18)); if (aw && a.distanceTo(camera.position) < 25) shake = Math.max(shake, .25);
     flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b))))); if (e.w) puff(b, 0xb8a888, 6, .1); }
   else if (e.k === "melee" && e.id !== myId) { swish(clamp(1 - new THREE.Vector3(...e.f).distanceTo(camera.position) / 20, .05, .8)); }
   else if (e.k === "ammo" && e.id === myId) { tink(1000); feed("Ammo refilled"); }
@@ -705,7 +772,8 @@ function tickInput() {
   else if (s && s.melee) { swish(1); swing = 1; lastFire = performance.now(); }
   else if (s) {   // the predicted shot: tracer, decal and sound now; the damage is the server's to decide
     const o = new THREE.Vector3(me.pos.x, me.pos.y + eye(me), me.pos.z), aw = me.w === "awp";
-    for (const d of s.dirs || [s.dir]) { const h = W.first(o, d, 300); tracer(gunTip(), o.clone().addScaledVector(d, h ? h.distance : 300), aw); if (h) { decal(h, d); puff(h.point, 0xb8a888, aw ? 14 : 6, aw ? .18 : .1); } } gunSound(me.w, 1); flash = aw ? .09 : .045; kick = aw ? 4 : 1; if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
+    for (const d of s.dirs || [s.dir]) { const h = W.first(o, d, 300); tracer(gunTip(), o.clone().addScaledVector(d, h ? h.distance : 300), aw); if (h) { decal(h, d); puff(h.point, 0xb8a888, aw ? 14 : 6, aw ? .18 : .1); const nrm = h.face.normal.clone(); if (nrm.dot(d) > 0) nrm.negate(); sparks(h.point, nrm, aw ? 10 : 5); } } gunSound(me.w, 1);
+    if (!(WEAPONS[me.w] || {}).shell && me.w !== "zeus") ejectShell(); if (muzzleLight) { muzzleLight.position.copy(gunTip()); muzzleLight.intensity = aw ? 60 : 30; } flash = aw ? .09 : .045; kick = aw ? 4 : 1; if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
   }
   pending.push(cmd); outbox.push(cmd); if (pending.length > 256) pending.shift();
 }
@@ -810,7 +878,7 @@ function render(dt) {
     if (SNDST.last && p0[3] === "0" && me.landed) step(.75);                          // the landing
     SNDST.last = st; }
   if (me.alive && me.onGround && sp > 3.5) { myStep += sp * dt * 3.2; if (myStep > Math.PI) { myStep -= Math.PI; step(.5); } }
-  tickParts(dt); tickFx(dt); drawRadar(); tickComp(dt); tickTalk();
+  tickParts(dt); tickShells(dt); if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 700); tickFx(dt); drawRadar(); tickComp(dt); tickTalk();
   gun.visible = ((me.alive || nowS() - diedAt < .45) && !scoped) || !!spec; if (!me.alive) { gun.position.y -= de * .5; gun.rotation.z += de * 1.1; } muzzle.visible = flash > 0 && !W0.melee && !scoped; muzzle.material.rotation = Math.random() * 6;
   const kcam = !spec && !me.alive && nowS() - diedAt > 1.1 && others.get(killerId), fov = kcam ? 46 : (scoped ? 2 * Math.atan(Math.tan(SET.fov / 2 * DEG) * W0.zoom[me.zoom]) / DEG : SET.fov) + fovPunch * 5;
   if (Math.abs(camera.fov - fov) > .01) { camera.fov = kcam ? camera.fov + (fov - camera.fov) * Math.min(1, dt * 2.5) : fov; camera.updateProjectionMatrix(); }
@@ -918,5 +986,5 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
   if (rj && Date.now() - rj.t < 30000) { team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
-if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
+if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, fx: () => ({ sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);

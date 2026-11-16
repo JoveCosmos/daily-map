@@ -87,6 +87,11 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   prediction correction seen, which should stay at 0 without other players.
 - Test-only server settings (never in production): `FAKE_LAG_MS`, `DM_TIME`, `ROUND_TIME`, `TO_WIN`, `SPAWN_AT=<weapon>`,
   `DEBUG_BOTS=1` (logs what bots decide every 30 s; an empty room pauses, so keep a client connected).
+- Hit registration, the measured way: `PER_TEAM=0 ROTATION=standin DUEL=1 NO_DEATH=1 FAKE_LAG_MS=150 node server.js`,
+  then `node nettest.mjs ws://127.0.0.1:<port>/ws 30`, again with `NO_REWIND=1` to compare (2026-11-16: 96% against 11%).
+  `ROTATION=standin` matters: a generated map has no clear 12-18 m lane, and `DUEL` now refuses to start without one.
+  Pace any protocol client by real time, as game.js does: commands faster than 64 a second queue on the server and
+  every shot arrives later than the last.
 - Check both a desktop browser and a phone (or a touch emulator in landscape).
 
 ## Sending work back

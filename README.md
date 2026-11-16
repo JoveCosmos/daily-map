@@ -22,7 +22,7 @@ No install: open a link and play, on desktop or phone.
   bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room rotates through `maps/rotation.json`.
 - **Bots** at four difficulties that strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
   team chat, radio calls and pings; a damage report and assists; private rooms with a 4-letter code; a leaderboard per
-  map; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
+  map; recorded gun sounds heard in 3D, muffled by walls; sparks, brass and bullet holes; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
 
 ## Run it
 
@@ -80,6 +80,7 @@ models.js               player and weapon models
 server/server.js        the authoritative game server (rooms, modes, bots, grenades, lag compensation, static files)
 server/*test.mjs        tests: netcode (nettest), weapons and movement (feeltest), grenades (nadetest), Competitive (comptest)
 maps/                   map definitions and their meshes
+sounds/                 recorded gunshots and reloads, all CC0 (see SOUNDS.md)
 tools/                  the map pipeline
 vendor/                 three.js, three-mesh-bvh, spark
 ```
@@ -94,4 +95,4 @@ touch stick and buttons for all of it.
 ## License
 
 GNO Network General Public License, version 6 or later (see `LICENSE.md`). The bundled maps were generated with Tencent
-HY-World and carry its license terms (see `MAPS.md`). `vendor/` holds third-party libraries under their own licenses.
+HY-World and carry its license terms (see `MAPS.md`). The recorded sounds are CC0 (see `SOUNDS.md`). `vendor/` holds third-party libraries under their own licenses.
