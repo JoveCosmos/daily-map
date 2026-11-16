@@ -43,7 +43,17 @@ const MODES = { dm: { name: "Deathmatch", time: ENV("DM_TIME") ?? 600 }, rounds:
   /* CS's competitive short match (2026-11-14): first to 9 of 16, sides swap after 8, 1:55 rounds, the bomb; freeze time 5 s
    (CS has 15, which felt long here, 2026-11-17), and the room's creator can set it (FREEZES) */
   comp: { name: "Competitive", roundTime: ENV("ROUND_TIME") ?? 115, freeze: ENV("FREEZE") ?? 5, toWin: ENV("TO_WIN") ?? 9, maxRounds: 16, half: ENV("HALF") ?? 8, endTime: 5,
-          bombTime: ENV("BOMB_TIME") ?? 40, buyTime: 20, plant: 3.2, defuse: 10, kitDefuse: 5, startMoney: ENV("START_MONEY") ?? 800, maxMoney: 16000 } };
+          bombTime: ENV("BOMB_TIME") ?? 40, buyTime: 20, plant: 3.2, defuse: 10, kitDefuse: 5, startMoney: ENV("START_MONEY") ?? 800, maxMoney: 16000 },
+  /* Gun Game, as CS's Arms Race (2026-11-17): a kill hands you the next gun of LADDER, a knife kill also takes a level
+     off the victim, and the first knife kill on the last level wins; deathmatch respawns, no pickups, no grenades */
+  gg: { name: "Gun Game", time: ENV("GG_TIME") ?? 900 } };
+/* Wingman, as CS's (2026-11-17): Competitive's rules two a side on one bomb site, 1:30 rounds */
+MODES.wing = { ...MODES.comp, name: "Wingman", roundTime: ENV("ROUND_TIME") ?? 90, perTeam: 2 };
+/* the daily challenge (2026-11-17): alone against four hard bots that keep coming back, on the day's challenge map;
+   eight kills as fast as you can, each death 10 s on the clock. The first finished run of a name each UTC day counts */
+MODES.dc = { name: "Daily challenge", time: 600, kills: ENV("DC_KILLS") ?? 8, penalty: 10 };
+const DC_EPOCH = Date.UTC(2026, 10, 16), dcDay = () => Math.floor((Date.now() - DC_EPOCH) / 86400000) + 1;
+const LADDER = ["ak", "m4", "aug", "famas", "p90", "mp7", "mac10", "xm1014", "awp", "ssg08", "deagle", "p250", "glock", "knife"];
 /* bot difficulty (2026-11-14), as CS offers it: how fast a bot reacts, how far its aim strays (x), how often it goes for the
    head, how wide it notices things (degrees either side), how readily it uses grenades (x) */
 const FINISHES = ["factory", "desert", "arctic", "night", "forest", "crimson", "gold"];   // weapon finishes, as models.js (cosmetic)
@@ -53,7 +63,7 @@ const FREEZES = [0, 3, 5, 8, 10, 15];   // the freeze times a room's creator can
 function createRoom(code, title, mode = "dm", botCfg = null, FF = false, mapId = "standin", diff = "normal", freeze = null) {   // FF: friendly fire
   const BD = DIFF[diff] || DIFF.normal;
   const MAP_ID = WORLDS[mapId] ? mapId : "standin", W = WORLDS[MAP_ID], SLOT = code === "DAILY" ? slotNow() : null;   // SLOT: this turn of the rotation, for the board   // botCfg: [CT, T] fixed counts, or null to fill empty slots to PER_TEAM
-  const MODE = MODES[mode] ? mode : "dm", G = { ph: "live", until: 0, round: 0, sc: [0, 0], msg: "", winner: -1, tSite: 0, buyUntil: 0 }, ROUNDS = MODE !== "dm", COMP = MODE === "comp", CM = MODES.comp;
+  const MODE = MODES[mode] ? mode : "dm", G = { ph: "live", until: 0, round: 0, sc: [0, 0], msg: "", winner: -1, tSite: 0, buyUntil: 0, rk: [], clutch: [null, null], hl: null }, DC = MODE === "dc", DMLIKE = MODE === "dm" || MODE === "gg" || DC, ROUNDS = !DMLIKE, COMP = MODE === "comp" || MODE === "wing", WING = MODE === "wing", GG = MODE === "gg", CM = COMP ? MODES[MODE] : MODES.comp;
 /* ── entities: humans and bots share the same state and hit boxes ────────────── */
 const ents = new Map(); let nextId = 1, tick = 0, time = 0;
 const hist = [];                                  // per tick: { time, states: Map(id -> {x,y,z,duck,alive}) }, last second
@@ -139,6 +149,19 @@ function sendable(viewer, e) {
   if ((seenTill.get(key) || 0) > time) return 1;
   return d < 25 && Math.hypot(e.s.vel.x, e.s.vel.z) > 3.5 ? 2 : 0;
 }
+/* Gun Game: a player's kit is the gun of its level (reserve without end), and the knife */
+function ggKit(e) {
+  const s = e.s; s.prim = null; s.sec = null; s.pa = [0, 0]; s.sa = [0, 0]; for (const n of NADES) s.nades[n] = 0; s.zeus = false; s.c4 = false;
+  const w = LADDER[Math.min(e.gl || 0, LADDER.length - 1)];
+  if (w === "knife") { s.w = "knife"; s.mag = 0; s.res = 0; s.reloadAt = 0; s.zoom = 0; } else { equip(s, w, undefined, 999); s.last = "knife"; }
+  s.deployUntil = (e.bot ? time : e.clock || time) + ((WEAPONS[w] || {}).deploy || .5);
+}
+function ggLevel(by, v, wid) {
+  if (wid === "knife" && (v.gl || 0) > 0) { v.gl--; events.push({ k: "level", id: v.id, l: v.gl, down: 1 }); }
+  by.gl = (by.gl || 0) + (wid === LADDER[Math.min(by.gl || 0, LADDER.length - 1)] || wid === "knife" ? 1 : 0);
+  if (by.gl >= LADDER.length) { G.winner = by.team; G.ph = "over"; G.until = time + 12; G.msg = by.name + " wins Gun Game"; events.push({ k: "match", w: by.team, sc: G.sc.slice(), by: by.id }); roster(); return; }
+  if (by.s.alive) ggKit(by); events.push({ k: "level", id: by.id, l: by.gl }); roster();
+}
 function spawnAt(e) {
   const n = pickSpawn(e);
   const s = e.s; s.pos.copy(n.p); s.vel.set(0, 0, 0); s.hp = 100; s.alive = true; s.duck = 0; s.punchX = s.punchY = 0; s.deployUntil = 0;
@@ -148,6 +171,7 @@ function spawnAt(e) {
   s.yaw = spawnYaw(s.pos, W.nodes[W.spawn[1 - e.team][0] ?? 0].p); s.pitch = 0;
   e.respawnAt = 0; e.spawned = time; e.protect = time + PROTECT; e.dmgBy = new Map(); e.blindUntil = 0; e.spawnP = s.pos.clone(); e.spawnN = (e.spawnN || 0) + 1;   // the client turns to the spawn facing once per new spawnN
   if (e.bot) { e.mode = null; e.coverCd = 0; e.moving = false; e.phaseEnd = 0; e.burst = 0; e.nextShot = 0; e.lastKnown = null; e.path = W.astar(n.i, W.spawn[1 - e.team][(Math.random() * W.spawn[1 - e.team].length) | 0] ?? n.i); e.pi = 0; e.seen = 0; e.target = null; }
+  if (GG) ggKit(e);
   events.push({ k: "spawn", id: e.id });
 }
 function addEntity(name, team, bot, ws) {
@@ -159,7 +183,7 @@ function addEntity(name, team, bot, ws) {
 function balanceBots() {
   for (const team of [0, 1]) {
     const humans = [...ents.values()].filter(e => !e.bot && e.team === team).length, bots = [...ents.values()].filter(e => e.bot && e.team === team);
-    const want = botCfg ? botCfg[team] : Math.max(0, PER_TEAM - humans);
+    const want = botCfg ? botCfg[team] : Math.max(0, (WING ? 2 : PER_TEAM) - humans);
     bots.sort((a, b) => (a.s.alive ? 1 : 0) - (b.s.alive ? 1 : 0));   // dead ones first
     while (bots.length > want) { if (ROUNDS && G.ph === "live" && bots[0].s.alive) break; const b = bots.shift(); ents.delete(b.id); events.push({ k: "leave", id: b.id }); }
     for (let k = bots.length; k < want; k++) { const used = new Set([...ents.values()].map(e => e.name)); const nm = BOTNAMES.find(n => !used.has(n)) || "Bot" + nextId; addEntity(nm, team, true, null); }
@@ -176,6 +200,8 @@ function stateAt(id, t) {
   const h = best && best.states.get(id); return h || null;
 }
 function resolveShot(e, dir, viewTime, melee = false, fl = {}, wid = null) {
+  e.shots = (e.shots || 0) + 1;   // for the killcam's record
+  if (!e.bot && !melee) { statOf(e.name).sh++; statsDirty = true; }
   const Wp = WEAPONS[wid || e.s.w] || WEAPONS.ak, far = melee ? Wp.range : Wp.reach || 300;
   const o = eyePos(e.s), wh = W.first(o, dir, far), wd = wh ? wh.distance : far;
   // a wallbang (2026-11-14): a wall no thicker than the gun's pen lets the bullet through, weaker. Its exit is found
@@ -205,19 +231,20 @@ function damage(v, by, dmg, head, pen, part, Wp, wid, fl = {}) {
   if (by !== v && dmg < 1000 && Wp && Wp.tag) { const tg = Wp.tag; v.s.tag = Math.max(v.s.tag || 0, tg); v.s.vel.x *= 1 - tg; v.s.vel.z *= 1 - tg; }
   if (process.env.NO_DEATH === "1") { events.push({ k: "hit", id: v.id, by: by.id, d: dmg, h: head ? 1 : 0, pn: pen ? 1 : 0 }); return; }   // test only: hits count, nobody dies
   const real = Math.min(dmg, v.s.hp);   // the health this hit really took (CS's damage report never counts past zero)
+  if (by !== v && !by.bot && by.team !== v.team) { const st = statOf(by.name); st.dmg += real; st.hi++; statsDirty = true; }
   if (by !== v) { v.dmgBy.set(by.id, (v.dmgBy.get(by.id) || 0) + real); if (by.team !== v.team) by.dealt += real; }   // what this life took, from whom (assists, damage)
   v.s.hp = Math.max(0, v.s.hp - dmg); events.push({ k: "hit", id: v.id, by: by.id, d: real, h: head ? 1 : 0, pn: pen ? 1 : 0 });
   if (v.bot && !v.seen) { v.seen = time; v.reactAt = time + BD.react[0] * .85 + Math.random() * BD.react[1]; v.target = by; }
-  if (v.s.hp <= 0 && v.s.alive) { if (v.s.prim) dropWeapon(v.s.prim, v.s.pos, ...held(v.s, v.s.prim)); else if (COMP && v.s.sec) { dropWeapon(v.s.sec, v.s.pos, ...held(v.s, v.s.sec)); v.s.sec = null; }   // CS: the primary, or the pistol if none
+  if (v.s.hp <= 0 && v.s.alive) { if (GG) {} else if (v.s.prim) dropWeapon(v.s.prim, v.s.pos, ...held(v.s, v.s.prim)); else if (COMP && v.s.sec) { dropWeapon(v.s.sec, v.s.pos, ...held(v.s, v.s.sec)); v.s.sec = null; }   // CS: the primary, or the pistol if none
      v.s.prim = null; v.s.cock = 0; v.s.alive = false; v.deaths++; if (by !== v) by.kills += by.team === v.team ? -1 : 1;   // a team kill costs a kill
-     v.respawnAt = MODE === "dm" ? time + RESPAWN : 0; if (MODE === "dm" && by.team !== v.team) G.sc[by.team]++; if (SLOT != null) { if (!by.bot && by.team !== v.team) boardHit(SLOT, MAP_ID, by.name, 1, 0); if (!v.bot) boardHit(SLOT, MAP_ID, v.name, 0, 1); }
+     v.respawnAt = DMLIKE ? time + RESPAWN : 0; if (DMLIKE && by.team !== v.team) G.sc[by.team]++; if (SLOT != null) { if (!by.bot && by.team !== v.team) boardHit(SLOT, MAP_ID, by.name, 1, 0); if (!v.bot) boardHit(SLOT, MAP_ID, v.name, 0, 1); }
      // an assist, as CS counts it: another enemy of the victim who did 41 or more this life, or whose flash has it blind
      let as = null, fa = 0;
      for (const [aid, d] of v.dmgBy) { const a = ents.get(aid); if (aid !== by.id && a && a.team !== v.team && d >= 41 && (!as || d > v.dmgBy.get(as.id))) as = a; }
      if (!as && v.blindUntil > time && v.blindBy && v.blindBy !== by.id) { const a = ents.get(v.blindBy); if (a && a.team !== v.team) { as = a; fa = 1; } }
      if (as) as.assists++;
      if (COMP && by !== v) pay(by, by.team === v.team ? -300 : REWARD[wid || by.s.w] ?? 300);   // CS's kill reward; a team kill costs 300
-     events.push({ k: "kill", id: v.id, by: by.id, h: head ? 1 : 0, g: WIDS.indexOf(wid || by.s.w), a: as ? as.id : 0, fa, pn: pen ? 1 : 0, sm: fl.sm ? 1 : 0, bl: by.blindUntil > time ? 1 : 0, ns: fl.ns ? 1 : 0, kh: Math.max(0, by.s.hp | 0), kd: Math.round(by.s.pos.distanceTo(v.s.pos)) }); }   // kh/kd: the killer's health left and the distance, for the victim's card
+     events.push({ k: "kill", id: v.id, by: by.id, h: head ? 1 : 0, g: WIDS.indexOf(wid || by.s.w), a: as ? as.id : 0, fa, pn: pen ? 1 : 0, sm: fl.sm ? 1 : 0, bl: by.blindUntil > time ? 1 : 0, ns: fl.ns ? 1 : 0, kh: Math.max(0, by.s.hp | 0), kd: Math.round(by.s.pos.distanceTo(v.s.pos)) }); sendKillcam(v, by); if (ROUNDS) noteKill(v, by, head); if (GG && by !== v && by.team !== v.team) ggLevel(by, v, wid || by.s.w); statKill(v, by, as, head, wid || by.s.w, MAP_ID); if (DC && !by.bot && by !== v && G.ph === "live") { if (head) by.dcHs = (by.dcHs || 0) + 1; if (by.kills >= MODES.dc.kills) dcFinish(true); } }   // kh/kd: the killer's health left and the distance, for the victim's card
 }
 
 /* ── bots: walk the routes, take the nearest enemy they can see, shoot in bursts ─ */
@@ -306,6 +333,23 @@ function botAim(b, kind, T) {
   }
   s.yaw = y0; s.pitch = p0; return best;
 }
+/* grenade lineups (2026-11-17): for each bomb site, up to two smokes that land on it, thrown standing still from the
+   attackers' way in (11 to 26 m out), found with the real grenade physics; once per map, shared by its rooms, sent in
+   the welcome to Competitive and Wingman. str: 1 = left click, 0 = right click (a lob), .5 = both */
+function lineups() {
+  if (W.lineups) return W.lineups; const out = [], t0 = Date.now(), fake = { s: newPlayer() };
+  for (const st of ALLSITES) {
+    const path = W.astar(W.spawn[1][0] ?? 0, W.nearest(st.p)); let got = 0;
+    for (const n of path.map(i => W.nodes[i]).filter(n => { const d = n.p.distanceTo(st.p); return d > 11 && d < 26; }).reverse()) {
+      if (got >= 2 || Date.now() - t0 > 4000) break;
+      if (out.some(l => Math.hypot(l.p[0] - n.p.x, l.p[2] - n.p.z) < 5)) continue;
+      const f = fake.s; f.pos.copy(n.p); f.vel.set(0, 0, 0); f.duck = 0; f.alive = true; f.w = "smoke";
+      const a = botAim(fake, "smoke", st.p);
+      if (a && a.err < 1.6) { out.push({ site: st.name, kind: "smoke", p: P3(n.p), yaw: +a.yaw.toFixed(3), pitch: +a.pitch.toFixed(3), str: a.str, land: P3(a.at) }); got++; }
+    }
+  }
+  log(`lineups for ${MAP_ID}: ${out.length} found in ${Date.now() - t0} ms`); return (W.lineups = out);
+}
 function botThrow(b, kind, T, maxErr, why) {
   const s = b.s; if (!(s.nades[kind] > 0) || time < (b.nadeCd || 0) || Math.random() > BD.nade) return false;
   const a = botAim(b, kind, T); b.nadeCd = time + 2;                         // a failed aim waits a little before trying again
@@ -347,7 +391,7 @@ function botTick(b) {
       if (objective != null) pathTo(b, objective);
       else if (b.lastKnown) { const f = Math.random() < .5; BOTSTAT[f ? "flank" : "chase"]++; pathTo(b, f ? flankNode(b, b.lastKnown) : W.nearest(b.lastKnown)); } }
     else if (b.lostAt && time - b.lostAt > 2.5 && b.lastKnown && b.lastKnown.distanceTo(s.pos) > 5 && b.lastKnown.distanceTo(s.pos) < 18) { botThrow(b, "molotov", b.lastKnown, 2.5, "molotov"); b.lostAt = 0; }   // it is still holding that spot: burn it out
-    if (!best && !b.target && !b.seen && WEAPONS[s.w].melee === undefined && time - (b.spawned || 0) > 3 && time - (b.lostAt || b.spawned || 0) > 5 && b.path && b.path.length - b.pi > 12 && Math.random() < .02) botDraw(b, "knife");   // a long run with nobody around: knife out, a little faster
+    if (!GG && !best && !b.target && !b.seen && WEAPONS[s.w].melee === undefined && time - (b.spawned || 0) > 3 && time - (b.lostAt || b.spawned || 0) > 5 && b.path && b.path.length - b.pi > 12 && Math.random() < .02) botDraw(b, "knife");   // a long run with nobody around: knife out, a little faster
   }
   const pushOn = COMP && b === BOMB.by && !BOMB.planted && G.ph === "live" && time - b.seen > 1.2;   // the carrier does not stay in a duel: it takes the bomb on to the site
   if (b.mode !== "cover" && b.seen && b.target && b.target.s.alive && !(b.fleeUntil > time) && !pushOn) {   // standing in fire: get out first, fight after
@@ -417,7 +461,7 @@ function usePickups(e, cmd) {
   // kevlar + helmet: CS armour, 100 points (2026-11-14; was +50 health); a bandage brings health back up (to 100)
   for (const x of PK) if (x.kind === 2 && !x.at && (s.armor < 100 || !s.helmet) && near(s, x.p, 1.2)) { s.armor = 100; s.helmet = true; x.at = time + x.respawn; events.push({ k: "kevlar", id: e.id }); }
   for (const x of PK) if (x.kind === 3 && !x.at && s.hp < 100 && near(s, x.p, 1.2)) { s.hp = Math.min(100, s.hp + 40); x.at = time + x.respawn; events.push({ k: "bandage", id: e.id }); }
-  if (!press) return;
+  if (!press || GG) return;
   // E: take the nearest weapon in reach, leaving yours in its place
   let best = null, bd = 1.6; for (const x of PK) if (x.kind === 0 && !x.at) { const d = Math.hypot(s.pos.x - x.p.x, s.pos.z - x.p.z); if (d < bd && Math.abs(s.pos.y - x.p.y) < 1.3) { bd = d; best = x; } }
   if (!best) return;
@@ -493,7 +537,7 @@ function tickNades() {
    Team 0 (Atlas) always plays CT, team 1 (Ember) T: at halftime the players change teams, the score goes with them. */
 /* the two sites, once per map: on the defenders' half (nearer the CT spawn than the T spawn), as far apart as the half
    allows, each with open ground around it */
-const SITES = W.sites || (W.sites = (() => {
+const ALLSITES = W.sites || (W.sites = (() => {
   const n = W.nodes; if (!n.length) return [];
   const dC = W.dijkstra(W.spawn[0][0] ?? 0), dT = W.dijkstra(W.spawn[1][0] ?? 0), span = W.span || 1;
   const open = x => n.filter(y => y.p.distanceTo(x.p) < 3).length >= 12;
@@ -504,6 +548,7 @@ const SITES = W.sites || (W.sites = (() => {
   for (let k = 0; k < 2; k++) { b = cand.reduce((m, x) => x.p.distanceTo(a.p) > m.p.distanceTo(a.p) ? x : m, cand[0]); a = cand.reduce((m, x) => x.p.distanceTo(b.p) > m.p.distanceTo(b.p) ? x : m, cand[0]); }
   return [{ name: "A", p: a.p.clone(), r: 3.5 }, { name: "B", p: b.p.clone(), r: 3.5 }];
 })());
+const SITES = WING ? [ALLSITES[1] || ALLSITES[0]] : ALLSITES;   // Wingman plays one site (CS uses B)
 const siteAt = p => SITES.findIndex(x => Math.hypot(p.x - x.p.x, p.z - x.p.z) < x.r && Math.abs(p.y - x.p.y) < 2);
 const inBuy = e => !!e.spawnP && e.spawnP.distanceTo(e.s.pos) < 12;   // the buy zone: around where you spawned this round (spawns spread over your side)
 const canBuy = e => COMP && e.s.alive && (G.ph === "freeze" || (G.ph === "live" && time < G.buyUntil)) && inBuy(e);
@@ -657,7 +702,7 @@ function endMatch() {
   G.msg = w < 0 ? "Draw" : TEAMNAME[w] + " wins"; events.push({ k: "match", w, sc: G.sc.slice() }); roster();
 }
 function startRound() {
-  G.round++; G.ph = "freeze"; G.until = time + (freeze ?? MODES[MODE].freeze); G.msg = "";
+  G.round++; G.rk = []; G.clutch = [null, null]; G.hl = null; G.ph = "freeze"; G.until = time + (freeze ?? MODES[MODE].freeze); G.msg = "";
   const half = COMP && G.round === CM.half + 1;
   if (COMP && (G.round === 1 || half)) { for (const e of ents.values()) { e.money = CM.startMoney; e.kit = false; } lossStreak[0] = lossStreak[1] = 0; }
   if (half) { for (const e of ents.values()) e.team = 1 - e.team; G.sc = [G.sc[1], G.sc[0]]; events.push({ k: "half" }); }   // sides swap, the score goes with the players
@@ -665,7 +710,7 @@ function startRound() {
     if (Math.abs(hs[0].length - hs[1].length) >= 2) { const big = hs[0].length > hs[1].length ? 0 : 1, mv = hs[big].sort((a, b) => (b.joinedAt || 0) - (a.joinedAt || 0))[0]; mv.team = 1 - big; mv.movedRound = G.round; events.push({ k: "moved", id: mv.id, team: mv.team }); } }
   resetPickups(); balanceBots();
   if (COMP) {
-    Object.assign(BOMB, { by: null, drop: null, planted: null, plant: null, defuse: null, boomed: false, defused: false }); G.tSite = Math.random() < .5 ? 0 : 1;
+    Object.assign(BOMB, { by: null, drop: null, planted: null, plant: null, defuse: null, boomed: false, defused: false }); G.tSite = SITES.length > 1 && Math.random() < .5 ? 1 : 0;
     for (const e of ents.values()) { const keep = e.s.alive && G.round > 1 && !half && e.movedRound !== G.round ? kitOf(e) : null;   /* a player moved to the other side starts fresh */ spawnAt(e); compKit(e, keep); e.protect = 0; e.wantPlant = e.wantDefuse = false; }
     const ts = [...ents.values()].filter(e => e.team === 1 && e.s.alive);
     if (ts.length) { BOMB.by = ts.find(e => process.env.BOMB_TO && e.name === process.env.BOMB_TO) || ts[(Math.random() * ts.length) | 0]; BOMB.by.s.c4 = true; }   // BOMB_TO: test only
@@ -676,13 +721,19 @@ function startRound() {
   events.push({ k: "round", n: G.round });
 }
 function match() {
-  if (MODE === "dm") {
-    if (G.ph === "live" && !G.until) G.until = time + MODES.dm.time;
+  if (DC) {
+    if (G.ph === "freeze" && time >= G.until) { G.ph = "live"; G.dcStart = time; G.until = time + MODES.dc.time; G.msg = ""; }
+    else if (G.ph === "live" && G.dcStart && time >= G.until) dcFinish(false);
+    return;
+  }
+  if (DMLIKE) {
+    if (G.ph === "live" && !G.until) G.until = time + MODES[MODE].time;
     if (G.ph === "live" && time >= G.until) endMatch();
-    else if (G.ph === "over" && time >= G.until) { resetMatch(); resetPickups(); respawnAll(); G.ph = "live"; G.until = time + MODES.dm.time; G.msg = ""; events.push({ k: "restart" }); }
+    else if (G.ph === "over" && time >= G.until) { resetMatch(); for (const e of ents.values()) e.gl = 0; resetPickups(); respawnAll(); G.ph = "live"; G.until = time + MODES[MODE].time; G.msg = ""; events.push({ k: "restart" }); }
     return;
   }
   const R = MODES[MODE];
+  if (G.hl && !G.hl.sent && time >= G.hl.at) { G.hl.sent = true; sendHighlight(G.hl); }
   if (!G.round) { startRound(); return; }
   if (G.ph === "freeze" && time >= G.until) { G.ph = "live"; G.until = time + R.roundTime; }
   else if (G.ph === "live" && COMP) {
@@ -695,7 +746,7 @@ function match() {
     else if (present[0] && !alive[0] && alive[1]) { w = 1; why = "kill"; msg = "Atlas eliminated"; }
     else if (present[1] && !alive[1] && !BOMB.planted) { w = 0; why = "kill"; msg = "Ember eliminated"; }
     else if (!BOMB.planted && time >= G.until) { w = 0; why = "time"; msg = "Time ran out"; }
-    if (w >= 0) { G.sc[w]++; payRound(w, why); G.ph = "end"; G.until = time + CM.endTime; G.winner = w; G.msg = TEAMNAME[w] + " win the round: " + msg; events.push({ k: "roundEnd", w, sc: G.sc.slice(), why }); roster(); }
+    if (w >= 0) { G.sc[w]++; payRound(w, why); G.ph = "end"; G.until = time + CM.endTime; G.winner = w; G.hl = pickHighlight(w); if (G.hl) { G.hl.at = time + 1; G.until = Math.max(G.until, G.hl.at + (G.hl.t1 - G.hl.t0) + 1); } G.msg = TEAMNAME[w] + " win the round: " + msg; events.push({ k: "roundEnd", w, sc: G.sc.slice(), why }); roster(); }
   }
   else if (G.ph === "live") {
     const alive = [0, 1].map(t => [...ents.values()].filter(e => e.team === t && e.s.alive).length), present = [0, 1].map(t => [...ents.values()].some(e => e.team === t));
@@ -705,12 +756,12 @@ function match() {
     else if (present[0] && !alive[0] && alive[1]) { w = 1; why = "Atlas eliminated"; }
     else if (time >= G.until) { w = present[0] ? 0 : present[1] ? 1 : 2; why = "time ran out"; }   // CT hold on time, if there are any
     if (w === 2) { G.ph = "end"; G.until = time + 4; G.winner = -1; G.msg = "Round drawn (" + why + ")"; events.push({ k: "roundEnd", w: -1, sc: G.sc.slice() }); }
-    else if (w >= 0) { G.sc[w]++; G.ph = "end"; G.until = time + 4; G.winner = w; G.msg = TEAMNAME[w] + " win the round (" + why + ")"; events.push({ k: "roundEnd", w, sc: G.sc.slice() }); }
+    else if (w >= 0) { G.sc[w]++; G.ph = "end"; G.until = time + 4; G.winner = w; G.hl = pickHighlight(w); if (G.hl) { G.hl.at = time + 1; G.until = Math.max(G.until, G.hl.at + (G.hl.t1 - G.hl.t0) + 1); } G.msg = TEAMNAME[w] + " win the round (" + why + ")"; events.push({ k: "roundEnd", w, sc: G.sc.slice() }); }
   } else if (G.ph === "end" && time >= G.until) {
     if (G.sc[0] >= R.toWin || G.sc[1] >= R.toWin || G.round >= R.maxRounds) endMatch(); else startRound();
   } else if (G.ph === "over" && time >= G.until) { resetMatch(); startRound(); events.push({ k: "restart" }); }
 }
-const frozen = () => (ROUNDS && G.ph === "freeze") || G.ph === "over";   // the results screen holds everyone still
+const frozen = () => ((ROUNDS || DC) && G.ph === "freeze") || G.ph === "over";   // the results screen holds everyone still
 
 /* ── the tick ────────────────────────────────────────────────────────────────── */
 function step() {
@@ -746,17 +797,68 @@ function step() {
   hist.push({ time, states }); if (hist.length > TICK) hist.shift();
   if (tick % 4 === 0) spotted();
   if (tick % TICK === 0) voteTick();
-  if (tick % 2 === 0) snapshot();
+  if (tick % 2 === 0) { snapshot(); record(); }
   if (tick % TICK === 0) roster();
   if (tick % (TICK * 30) === 0) for (const e of ents.values()) if (!e.bot) log(`[${code}] ${e.name} ping ${e.ping} ms`);   // what players actually get
 }
 const r2 = x => Math.round(x * 100) / 100, r3 = x => Math.round(x * 1000) / 1000;
+/* the killcam (2026-11-17): everyone's last 3.5 s at the snapshot rate (where they stood, where they looked, what they
+   held, how many shots they fired), and on a death the victim alone gets its killer's, its own and those near the killer,
+   to watch it back through the killer's eyes. Only the dead see it, after the fact, so it gives nothing to the living. */
+const KC_KEEP = 10;   // 3.5 s for a killcam, up to 8 s for a round's highlight
+const kcRow = e => [r2(time), r2(e.s.pos.x), r2(e.s.pos.y), r2(e.s.pos.z), r3(e.s.yaw), r3(e.s.pitch), r2(e.s.duck), e.s.alive ? 1 : 0, WIDS.indexOf(e.s.w), e.shots || 0];
+function record() { for (const e of ents.values()) { const h = e.hist || (e.hist = []); h.push(kcRow(e)); e.shots = 0; while (h.length && h[0][0] < time - KC_KEEP) h.shift(); } }
+/* the round's highlight (2026-11-17): every kill of the round, and the moment a side was down to its last player against
+   two or more; at the round's end the best of it (an ace, a won clutch, then the most kills, at least two) is sent to
+   everyone as a record to watch through that player's eyes, as CS's round MVP */
+function dcFinish(done) {
+  const e = [...ents.values()].find(x => !x.bot); G.ph = "over"; G.until = time + 86400;
+  if (!e) return; const el = time - G.dcStart, score = done ? el + e.deaths * MODES.dc.penalty : null;
+  G.msg = done ? "Challenge done" : "Out of time";
+  const res = done ? dcRecord(e.name, { t: +score.toFixed(1), el: +el.toFixed(1), d: e.deaths, hs: e.dcHs || 0, k: e.kills, map: MAP_ID }) : null;
+  try { e.ws.send(JSON.stringify({ t: "dcres", done, day: dcDay(), map: MAPS[MAP_ID].name.replace(/, HY-World$/, ""), tt: done ? +score.toFixed(1) : null, el: +el.toFixed(1), d: e.deaths, hs: e.dcHs || 0, k: e.kills, ...(res || {}) })); } catch (err) {}
+  log(`[${code}] challenge ${done ? "done" : "timed out"} by ${e.name}: ${done ? score.toFixed(1) + " s" : ""}`);
+}
+function noteKill(v, by, head) {
+  if (G.ph !== "live") return; G.rk.push({ by: by.id, v: v.id, t: time, h: !!head, team: by.team, vt: v.team });
+  const alive = [0, 1].map(t => [...ents.values()].filter(e => e.team === t && e.s.alive));
+  for (const t of [0, 1]) if (alive[t].length === 1 && alive[1 - t].length >= 2 && !G.clutch[t]) G.clutch[t] = { id: alive[t][0].id, vs: alive[1 - t].length, t: time };
+}
+function pickHighlight(w) {
+  if (w < 0 || !G.rk.length) return null;
+  const enemies = [...ents.values()].filter(e => e.team !== w).length, best = { score: 0 };
+  for (const id of new Set(G.rk.map(k => k.by))) {
+    const ks = G.rk.filter(k => k.by === id && k.vt !== k.team), e = ents.get(id); if (!e || e.team !== w) continue;
+    const cl = G.clutch[e.team] && G.clutch[e.team].id === id && e.team === w ? G.clutch[e.team] : null, ace = ks.length >= Math.max(3, enemies);
+    if (ks.length < 2 && !cl) continue;
+    const score = ks.length * 2 + (cl ? cl.vs * 3 : 0) + (ace ? 10 : 0);
+    if (score > best.score) Object.assign(best, { score, id, ks, cl, ace });
+  }
+  if (!best.id) return null;
+  const title = best.ace ? "Ace" : best.cl ? `1v${best.cl.vs} clutch` : `${best.ks.length} kills`;
+  const t0 = Math.min(...best.ks.map(k => k.t), best.cl ? best.cl.t : Infinity) - 1.2, t1 = Math.max(...best.ks.map(k => k.t), best.cl ? best.cl.t : -Infinity) + .8;
+  return { id: best.id, title, t0: Math.max(t0, t1 - 8), t1 };
+}
+function sendHighlight(hl) {
+  const by = ents.get(hl.id); if (!by || !by.hist) return;
+  const cut = (rows, half) => rows.filter((r, i) => r[0] >= hl.t0 - .1 && r[0] <= hl.t1 + .1 && (!half || i % 2 === 0));
+  const h = [[by.id, by.team, cut(by.hist, false)], ...[...ents.values()].filter(e => e !== by && e.hist).map(e => [e.id, e.team, cut(e.hist, true)])].filter(x => x[2].length);
+  const msg = JSON.stringify({ t: "hl", by: by.id, title: hl.title, t0: r2(hl.t0), t1: r2(hl.t1), h });
+  for (const e of ents.values()) if (!e.bot && e.ws && e.ws.readyState === 1) try { e.ws.send(msg); } catch (err) {}
+}
+function sendKillcam(v, by) {
+  if (v.bot || !v.ws || v.ws.readyState !== 1 || by === v || !by.hist || by.hist.length < 8) return;
+  const kp = by.s.pos, near = [...ents.values()].filter(e => e !== by && e !== v && e.hist && e.hist.length && e.s.pos.distanceTo(kp) < 30).slice(0, 6);
+  // the killer at the full rate with this moment added (the killing shot), the rest at half the rate
+  const h = [[by.id, by.team, [...by.hist, kcRow(by)]], [v.id, v.team, [...(v.hist || []), kcRow(v)]], ...near.map(e => [e.id, e.team, e.hist.filter((_, i) => i % 2 === 0)])];
+  try { v.ws.send(JSON.stringify({ t: "kc", by: by.id, at: r2(time), h })); } catch (err) {}
+}
 function snapshot() {
   const row = (e, mine, vis) => [e.id, e.team, e.bot ? 1 : 0, r2(e.s.pos.x), r2(e.s.pos.y), r2(e.s.pos.z), r3(e.s.yaw), r3(e.s.pitch), r2(e.s.duck), e.s.alive ? 1 : 0, r2(e.s.vel.x), r2(e.s.vel.z), WIDS.indexOf(e.s.w), mine ? e.s.hp : null, vis];   // an enemy's health is not sent
   if (tick % 640 === 0) for (const [k, v] of seenTill) if (v < time) seenTill.delete(k);   // forget old sightings every 10 s
   const listFor = viewer => { const out = []; for (const e of ents.values()) { if (e === viewer) continue; const v = sendable(viewer, e); if (v) out.push(row(e, e.team === viewer.team, v === 2 ? 0 : 1)); } return out; };
   // every pickup, with the seconds until a taken one comes back (0 = there now), so the page can show where it will be
-  const pk = PK.map(x => [x.id, x.kind, x.kind ? -x.kind : WIDS.indexOf(x.w), r2(x.p.x), r2(x.p.y), r2(x.p.z), x.at ? Math.max(0, Math.ceil(x.at - time)) : 0]);
+  const pk = PK.filter(x => !GG || x.kind !== 0).map(x => [x.id, x.kind, x.kind ? -x.kind : WIDS.indexOf(x.w), r2(x.p.x), r2(x.p.y), r2(x.p.z), x.at ? Math.max(0, Math.ceil(x.at - time)) : 0]);
   const ev = events; events = [];
   const ng = NG.map(g => [g.id, NADES.indexOf(g.kind), r2(g.p.x), r2(g.p.y), r2(g.p.z)]), left = x => Math.max(0, r2(x.until - time));
   const sm = SMOKES.map(c => [c.id, r2(c.p.x), r2(c.p.y), r2(c.p.z), left(c)]), fi = FIRES.map(f => [f.id, r2(f.p.x), r2(f.p.y), r2(f.p.z), left(f)]);
@@ -771,12 +873,12 @@ function snapshot() {
       ...(COMP ? { mo: e.money, kit: e.kit ? 1 : 0, c4: s.c4 ? 1 : 0, ib: canBuy(e) ? 1 : 0,
         pp: BOMB.plant && BOMB.plant.by === e ? r2((time - BOMB.plant.t0) / CM.plant) : 0, dp: BOMB.defuse && BOMB.defuse.by === e ? r2((time - BOMB.defuse.t0) / BOMB.defuse.need) : 0,
         bd: e.team === 1 && BOMB.drop ? P3(BOMB.drop) : 0, tmo: [...ents.values()].filter(x => x.team === e.team).map(x => [x.id, x.money | 0]) } : {}), bl: e.blindUntil > time ? r2(e.blindUntil - time) : 0, sn: e.spawnN, syw: e.spawnN ? s.yaw : 0 },
-      e: listFor(e), pk, ev, pv: e.pv && e.pv.length ? e.pv.splice(0) : undefined, ng, sm, fi, sp: SPOT[e.team].map(v => [v.id, r2(v.s.pos.x), r2(v.s.pos.z)]), dc: DECOYS.filter(d => d.by.team !== e.team).map(d => [d.id, r2(d.p.x), r2(d.p.z)]), gm: { m: MODE, ph: G.ph, tl: Math.max(0, Math.ceil(G.until - time)), rn: G.round, sc: G.sc, msg: G.msg, fz: frozen(),
+      e: listFor(e), pk, ev, pv: e.pv && e.pv.length ? e.pv.splice(0) : undefined, ng, sm, fi, sp: SPOT[e.team].map(v => [v.id, r2(v.s.pos.x), r2(v.s.pos.z)]), dc: DECOYS.filter(d => d.by.team !== e.team).map(d => [d.id, r2(d.p.x), r2(d.p.z)]), gm: { m: MODE, ph: G.ph, tl: Math.max(0, Math.ceil(G.until - time)), rn: G.round, sc: G.sc, msg: G.msg, fz: frozen(), dc: DC ? { k: e.kills, d: e.deaths, need: MODES.dc.kills, pen: MODES.dc.penalty, el: G.dcStart && G.ph === "live" ? r2(time - G.dcStart) : 0 } : undefined,
         ...(COMP ? { bp: BOMB.planted ? [...P3(BOMB.planted.p), BOMB.planted.site] : 0, bl: BOMB.planted && !BOMB.boomed && !BOMB.defused ? r2(BOMB.planted.boom - time) : 0, bt: Math.max(0, Math.ceil(G.buyUntil - time)) } : {}) } }));
   }
 }
 function roster() {
-  const r = [...ents.values()].map(e => [e.id, e.name, e.team, e.bot ? 1 : 0, e.kills, e.deaths, e.ping, e.assists, Math.round(e.dealt), e.fin || 0]);
+  const r = [...ents.values()].map(e => [e.id, e.name, e.team, e.bot ? 1 : 0, e.kills, e.deaths, e.ping, e.assists, Math.round(e.dealt), e.fin || 0, GG ? e.gl || 0 : null]);
   for (const e of ents.values()) if (!e.bot && e.ws && e.ws.readyState === 1) e.ws.send(JSON.stringify({ t: "r", r }));
 }
 
@@ -786,10 +888,12 @@ function roster() {
     if ((BANS.get(String(name).toLowerCase()) || 0) > time) { ws.send(JSON.stringify({ t: "x", why: "You were voted out of this room" })); ws.close(4003, "voted out"); return; }
     if ([...ents.values()].filter(e => !e.bot).length >= MAX_PLAYERS) { ws.send(JSON.stringify({ t: "x", why: "That room is full" })); ws.close(1013, "full"); return; }
     const humans = [0, 1].map(t => [...ents.values()].filter(e => !e.bot && e.team === t).length);
-    const team = teamPref === "ct" ? 0 : teamPref === "t" ? 1 : humans[0] <= humans[1] ? 0 : 1;
+    if (DC && humans[0] + humans[1] > 0) { ws.send(JSON.stringify({ t: "x", why: "A challenge run is for one player" })); ws.close(1013, "solo"); return; }
+    const team = DC ? 0 : teamPref === "ct" ? 0 : teamPref === "t" ? 1 : humans[0] <= humans[1] ? 0 : 1;
     const e = addEntity(name, team, false, ws); e.joinedAt = time; e.fin = Math.max(0, FINISHES.indexOf(String(fin || "")));
     balanceBots(); emptySince = 0;
-    ws.send(JSON.stringify({ t: "w", id: e.id, team: e.team, map: MAP_ID, tick, tm: time, rate: TICK, room: code, title, mode: MODE, radar: RADAR, sites: COMP ? SITES.map(x => [x.name, ...P3(x.p), x.r]) : [] }));
+    if (DC) { G.ph = "freeze"; G.until = time + 3; G.dcStart = 0; e.kills = e.deaths = 0; e.dcHs = 0; e.protect = time + 4; }
+    ws.send(JSON.stringify({ t: "w", id: e.id, team: e.team, map: MAP_ID, tick, tm: time, rate: TICK, room: code, title, mode: MODE, radar: RADAR, sites: COMP ? SITES.map(x => [x.name, ...P3(x.p), x.r]) : [], ladder: GG ? LADDER : undefined, lineups: COMP ? lineups().filter(l => SITES.some(x => x.name === l.site)) : undefined }));
     roster(); log(`[${code}] join ${e.id} ${name} team ${e.team ? "Ember" : "Atlas"}`);
     ws0.on("message", raw0 => FAKE_LAG ? setTimeout(() => onMsg(raw0), FAKE_LAG) : onMsg(raw0));
     function onMsg(raw) {
@@ -841,6 +945,38 @@ let boards = (() => { try { return JSON.parse(fs.readFileSync(BOARD_FILE, "utf8"
 function boardHit(slot, map, name, dk, dd) { const b = boards[slot] || (boards[slot] = { map, s: {} }), r = b.s[name] || (b.s[name] = [0, 0]); r[0] += dk; r[1] += dd; boardsDirty = true; }
 setInterval(() => { if (!boardsDirty) return; boardsDirty = false; for (const k of Object.keys(boards).map(Number).sort((a, b) => b - a).slice(8)) delete boards[k];
   try { fs.writeFileSync(BOARD_FILE + ".tmp", JSON.stringify(boards)); fs.renameSync(BOARD_FILE + ".tmp", BOARD_FILE); } catch (e) { log("boards: " + e.message); } }, 10000);
+/* lifetime stats per player name (2026-11-17), kept in $STATE_DIRECTORY/stats.json like the boards: kills and deaths
+   against the other side, headshots, assists, damage, shots and hits, kills per gun and per map. Humans only; a name is
+   a name (no accounts), so anyone typing it adds to it */
+const STATS_FILE = path.join(path.dirname(BOARD_FILE), "stats.json");
+let STATS = (() => { try { return JSON.parse(fs.readFileSync(STATS_FILE, "utf8")); } catch (e) { return {}; } })(), statsDirty = false;
+function statOf(name) { const k = String(name).toLowerCase(); return STATS[k] || (STATS[k] = { n: name, k: 0, d: 0, hs: 0, a: 0, dmg: 0, sh: 0, hi: 0, w: {}, m: {}, since: Date.now() }); }
+function statKill(v, by, as, head, wid, map) {
+  if (by !== v && by.team !== v.team && !by.bot) { const st = statOf(by.name); st.k++; if (head) st.hs++; st.w[wid] = (st.w[wid] || 0) + 1; st.m[map] = (st.m[map] || 0) + 1; st.last = Date.now(); }
+  if (!v.bot) { statOf(v.name).d++; statOf(v.name).last = Date.now(); }
+  if (as && !as.bot) statOf(as.name).a++;
+  statsDirty = true;
+}
+setInterval(() => { if (!statsDirty) return; statsDirty = false;
+  try { fs.writeFileSync(STATS_FILE + ".tmp", JSON.stringify(STATS)); fs.renameSync(STATS_FILE + ".tmp", STATS_FILE); } catch (e) { log("stats: " + e.message); } }, 15000);
+/* the daily challenge's runs, per UTC day number, the last 30 days, in $STATE_DIRECTORY/challenge.json */
+const DC_FILE = path.join(path.dirname(BOARD_FILE), "challenge.json");
+let DCR = (() => { try { return JSON.parse(fs.readFileSync(DC_FILE, "utf8")); } catch (e) { return {}; } })();
+const dcMap = () => DAILY_LIST[(dcDay() * 7 + 3) % DAILY_LIST.length];   // the day's challenge map, its own order apart from the rotation
+const dcTop = (day, n) => Object.values(DCR[day] || {}).sort((a, b) => a.t - b.t).slice(0, n);
+function dcRecord(name, r) {
+  const day = dcDay(), k = String(name).toLowerCase(), d = DCR[day] || (DCR[day] = {}), counted = !d[k];
+  if (counted) d[k] = { name, ...r, at: Date.now() };
+  for (const x of Object.keys(DCR).map(Number).sort((a, b) => b - a).slice(30)) delete DCR[x];
+  try { fs.writeFileSync(DC_FILE + ".tmp", JSON.stringify(DCR)); fs.renameSync(DC_FILE + ".tmp", DC_FILE); } catch (e) { log("challenge: " + e.message); }
+  const all = Object.values(d).sort((a, b) => a.t - b.t);
+  return { counted, rank: 1 + all.findIndex(x => x.name.toLowerCase() === k), of: all.length, best: d[k].t };
+}
+const statView = st => { const top = o => Object.entries(o).sort((a, b) => b[1] - a[1])[0];
+  const fw = top(st.w), fm = top(st.m);
+  return { name: st.n, k: st.k, d: st.d, kd: +(st.k / Math.max(1, st.d)).toFixed(2), hs: st.k ? Math.round(100 * st.hs / st.k) : 0, a: st.a, dmg: st.dmg, acc: st.sh ? Math.round(100 * Math.min(st.hi, st.sh) / st.sh) : 0,
+    gun: fw ? { name: (WEAPONS[fw[0]] || {}).name || fw[0], k: fw[1] } : null, map: fm && MAPS[fm[0]] ? { name: MAPS[fm[0]].name.replace(/, HY-World$/, ""), k: fm[1] } : null,
+    since: st.since, rank: 1 + Object.values(STATS).filter(x => x.k > st.k).length, players: Object.keys(STATS).length }; };
 const boardTop = (slot, n) => { const b = boards[slot]; return b ? Object.entries(b.s).sort((x, y) => y[1][0] - x[1][0] || x[1][1] - y[1][1]).slice(0, n).map(([name, [k, d]]) => ({ name, k, d })) : []; };
 const boardPast = (slot, n) => Object.keys(boards).map(Number).filter(k => k < slot && boards[k].map && MAPS[boards[k].map]).sort((a, b) => b - a).slice(0, n)
   .map(k => ({ map: MAPS[boards[k].map].name.replace(/, HY-World$/, ""), preview: "maps/" + boards[k].map + "-preview.jpg", best: boardTop(k, 1).find(b => b.k > 0) || null, players: Object.keys(boards[k].s).length }));
@@ -865,6 +1001,12 @@ const server = http.createServer((req, res) => {
   if (p === "/diag" && req.method === "POST") { let b = ""; req.on("data", d => { if (b.length < 4000) b += d; }); req.on("end", () => { if ((diagN = diagN + 1) < 600) log("diag " + b.replace(/[\r\n]/g, " ").slice(0, 1500)); res.writeHead(204); res.end(); }); return; }
   if (p === "/skipmap" && req.method === "POST") { const ok = MAP_SKIP && Date.now() - skipAt > 5000; if (ok) { skipAt = Date.now(); dailySkip++; switchDaily(); log("map skipped by a player"); }
     res.writeHead(ok ? 200 : 429, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ ok })); return; }
+  if (p === "/challenge") { const nm = (new URL(req.url, "http://x").searchParams.get("name") || "").toLowerCase(), day = dcDay(), id = dcMap();
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ day, map: MAPS[id].name.replace(/, HY-World$/, ""), preview: "maps/" + id + "-preview.jpg", kills: MODES.dc.kills, penalty: MODES.dc.penalty, top: dcTop(day, 8), me: nm && DCR[day] && DCR[day][nm] || null, players: Object.keys(DCR[day] || {}).length })); return; }
+  if (p === "/stats") { const nm = new URL(req.url, "http://x").searchParams.get("name") || "", st = STATS[nm.toLowerCase()];
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ me: st ? statView(st) : null, top: Object.values(STATS).sort((a, b) => b.k - a.k).slice(0, 8).filter(x => x.k > 0).map(x => ({ name: x.n, k: x.k, kd: +(x.k / Math.max(1, x.d)).toFixed(2), hs: x.k ? Math.round(100 * x.hs / x.k) : 0 })) })); return; }
   if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), skip: MAP_SKIP, preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
   const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3|models\/[\w.-]+\.glb)$/.test(p) && !p.includes("..");
   const f = path.join(ROOT, p);
@@ -889,8 +1031,9 @@ wss.on("connection", (ws0, req) => {
   if (q.get("create") === "1") {
     if (rooms.size >= MAX_ROOMS) { ws0.send(JSON.stringify({ t: "x", why: "Too many rooms open, join one of them" })); ws0.close(1013, "too many rooms"); return; }
     const code = newCode(), title = (q.get("title") || name + "'s room").replace(/[^\w .'-]/g, "").slice(0, 24) || code;
-    const bpt = parseInt(q.get("bpt"), 10), bots = process.env.TEST_BOTS ? process.env.TEST_BOTS.split(",").map(Number) : q.get("bots") === "0" ? [0, 0] : bpt >= 1 && bpt <= 5 ? [bpt, bpt] : null;   // TEST_BOTS "ct,t": test only   // a private room: today's map, no bots or 1-5 a side
-    room = createRoom(code, title, q.get("mode") === "comp" ? "comp" : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal", q.get("frz") && FREEZES.includes(+q.get("frz")) ? +q.get("frz") : null); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
+    const bpt = parseInt(q.get("bpt"), 10), bots = process.env.TEST_BOTS ? process.env.TEST_BOTS.split(",").map(Number) : q.get("bots") === "0" ? [0, 0] : bpt >= 1 && bpt <= 5 ? (q.get("mode") === "wing" ? null : [bpt, bpt]) : null;   // TEST_BOTS "ct,t": test only   // a private room: today's map, no bots or 1-5 a side
+    if (q.get("mode") === "dc") room = createRoom(code, "Daily challenge #" + dcDay(), "dc", [0, 4], false, dcMap(), "hard");
+    else room = createRoom(code, title, ["comp", "gg", "wing"].includes(q.get("mode")) ? q.get("mode") : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal", q.get("frz") && FREEZES.includes(+q.get("frz")) ? +q.get("frz") : null); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
   } else room = rooms.get((q.get("room") || "DAILY").toUpperCase());
   if (!room) { ws0.send(JSON.stringify({ t: "x", why: "No room with that code" })); ws0.close(4004, "no such room"); return; }
   room.join(ws, ws0, name, team, q.get("fin"));

@@ -3,7 +3,7 @@
    not confirmed), and draws everyone else 100 ms in the past, interpolated between snapshots. Shots carry the
    view time they were aimed in, so the server can rewind the others to what this screen showed (lag compensation). */
 import * as THREE from "three";
-import { World, DT, U, DEG, clamp, newPlayer, move, weapon, eye, inaccuracy, standinParts, gltfGeometries, WEAPONS, WIDS, wpn, NADES, NADE } from "./sim.js";
+import { World, DT, U, DEG, clamp, newPlayer, move, weapon, eye, inaccuracy, standinParts, gltfGeometries, WEAPONS, WIDS, wpn, NADES, NADE, viewDir } from "./sim.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 const gltf = () => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);   // map files are meshopt-compressed, about 17x smaller
@@ -149,13 +149,13 @@ addEventListener("keydown", e => { if (e.target && e.target.id === "name") retur
   if ((e.code === "KeyY" || e.code === "KeyU") && connected) { e.preventDefault(); openChat(e.code === "KeyU"); return; }
   if (e.code === "KeyZ" && connected) { radioMenu(!CHAT.radio); return; }
   if (CHAT.radio && (/^Digit[0-9]$/.test(e.code) || e.code === "Escape")) { if (e.code === "Escape") radioMenu(false); else sendRadio((+e.code.slice(5) + 9) % 10); e.preventDefault(); return; }
-  if (e.code === "KeyB" && GM && GM.m === "comp") { buyMenu(!BUY.open); return; }
+  if (e.code === "KeyB" && GM && compLike(GM.m)) { buyMenu(!BUY.open); return; }
   if (BUY.open && (/^Digit[0-9]$/.test(e.code) || e.code === "Escape" || e.code === "Backspace")) { buyKey(e.code); e.preventDefault(); return; }
   if (e.code === "Digit5") slotQ = "c";
   if (e.code === "KeyF" && me.alive) inspectT = 2.2; if ((e.code === "F1" || e.code === "F2") && VOTEON) { e.preventDefault(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "vote", y: e.code === "F1" })); VOTEON = false; $("vote").innerHTML += `<p>You voted ${e.code === "F1" ? "yes" : "no"}</p>`; return; }
   if (e.code === "F1") { e.preventDefault(); DEBUG = !DEBUG; return; } if (e.code === "Tab") e.preventDefault(); keys[e.code] = true; if (e.code === "KeyR") reloadQ = true; if (e.code === "Digit1") slotQ = "p"; if (e.code === "Digit2") slotQ = "s"; if (e.code === "Digit3") slotQ = "k"; if (e.code === "Digit4") slotQ = "g"; if (e.code === "KeyQ") slotQ = "q"; if (e.code === "KeyK" && !e.repeat) unstuck(); if (["Space", "ControlLeft"].includes(e.code)) e.preventDefault(); });
 addEventListener("keyup", e => { keys[e.code] = false; });
-addEventListener("mousedown", e => { if (BUY.free) { if (e.target === renderer.domElement) buyMenu(false); return; } if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) { mouseDown = true; dryFire(); } if (e.button === 2) rmb = true; });
+addEventListener("mousedown", e => { if (BUY.free) { if (e.target === renderer.domElement) buyMenu(false); return; } if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && KC.on) { KC.skip = true; return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) { mouseDown = true; dryFire(); } if (e.button === 2) rmb = true; });
 addEventListener("mouseup", e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rmb = false; });
 addEventListener("wheel", e => { if (locked) slotQ = slotQ || "q"; }, { passive: true });
 let swayX = 0, swayY = 0;
@@ -163,7 +163,7 @@ addEventListener("mousemove", e => { if (!locked || !connected || BUY.free) retu
 /* player settings (2026-11-01, group feedback: "need settings like mouse sens, fov"): kept per browser.
    Sensitivity is on CS's own scale (0.022 degrees per mouse count x sens), so a CS player types their number;
    5.7 matches the original feel. FOV is vertical degrees (74 = CS's 90 on a 4:3 screen, seen at 16:9). */
-const SET = Object.assign({ sens: 5.7, tsens: 1, fov: 74, vol: 80, inv: false, xh: "#5cff8a", crouch: "c", fin: "factory" },
+const SET = Object.assign({ dmg: true, dink: true, kcam: true, hl: true, sens: 5.7, tsens: 1, fov: 74, vol: 80, inv: false, xh: "#5cff8a", crouch: "c", fin: "factory" },
   (() => { try { return JSON.parse(localStorage.getItem("fps-settings") || "{}"); } catch (e) { return {}; } })());
 const saveSet = () => { try { localStorage.setItem("fps-settings", JSON.stringify(SET)); } catch (e) {} };
 const zoomMul = () => { const W0 = wpn(me); return W0.zoom && me.zoom ? W0.zoom[me.zoom] : 1; };
@@ -187,6 +187,9 @@ addEventListener("blur", () => { for (const k in keys) keys[k] = false; mouseDow
   fov.addEventListener("input", () => put("fov", +fov.value));
   vol.addEventListener("input", () => put("vol", +vol.value));
   inv.addEventListener("click", () => put("inv", !SET.inv));
+  // on/off switches for the 2026-11-17 additions: damage numbers, the headshot sound, the killcam, round highlights
+  for (const b of document.querySelectorAll("[data-set]")) { const k = b.dataset.set, show = () => { b.setAttribute("aria-pressed", !!SET[k]); b.textContent = SET[k] ? "On" : "Off"; b.classList.toggle("on", !!SET[k]); };
+    show(); b.addEventListener("click", () => { SET[k] = !SET[k]; saveSet(); show(); }); }
   $("setCrouch").addEventListener("click", () => put("crouch", SET.crouch === "ctrl" ? "c" : "ctrl"));
   xh.addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) put("xh", b.dataset.c); });
   $("setFin").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) put("fin", b.dataset.f); });
@@ -205,7 +208,7 @@ if (TOUCH) {
   const T = $("touch"), stick = $("stick"), knob = stick.firstElementChild, R = 50, SENS = .0052;
   let stickId = null, sx = 0, sy = 0; const look = new Map();   // touch id -> last x, y
   const press = (code, down) => { keys[code] = down; if (down && code === "KeyR") reloadQ = true; if (down && code === "KeyQ") slotQ = "q"; if (down && code === "Digit4") slotQ = "g"; if (down && code === "Digit2") slotQ = "s";
-    if (down && code === "Digit5") slotQ = "c"; if (down && code === "Digit3") slotQ = "k"; if (down && code === "KeyF" && me.alive) inspectT = 2.2; if (down && code === "KeyB" && GM && GM.m === "comp") buyMenu(!BUY.open); if (down && code === "KeyZ") radioMenu(!CHAT.radio); };
+    if (down && code === "Digit5") slotQ = "c"; if (down && code === "Digit3") slotQ = "k"; if (down && code === "KeyF" && me.alive) inspectT = 2.2; if (down && code === "KeyB" && GM && compLike(GM.m)) buyMenu(!BUY.open); if (down && code === "KeyZ") radioMenu(!CHAT.radio); };
   const setStick = (dx, dy) => { const m = Math.hypot(dx, dy), k = m > R ? R / m : 1; dx *= k; dy *= k; knob.style.transform = `translate(${dx}px,${dy}px)`;
     const t = R * .3; keys.KeyW = dy < -t; keys.KeyS = dy > t; keys.KeyA = dx < -t; keys.KeyD = dx > t; keys.ShiftLeft = m > t && m < R * .7; };
   T.addEventListener("touchstart", ev => { ev.preventDefault(); audio(); touchesSeen++;
@@ -368,6 +371,22 @@ function impactSound(vol) { if (!AC) return; const t = AC.currentTime;
     g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09 * vol, t + .03); g.gain.exponentialRampToValueAtTime(.0005, t + .34); o.connect(g).connect(dest()); o.start(t); o.stop(t + .36); } }   // a ricochet
 function bodyHit(head) { if (!AC) return; const t = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf2(.1, x => Math.pow(1 - x, 3)); const f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 380; const g = AC.createGain(); g.gain.value = .9; s.connect(f).connect(g).connect(MG || OUT); s.start(t);
   if (head) for (const [fr, a] of [[2350, .12], [3910, .07], [5480, .05]]) { const o = AC.createOscillator(), g2 = AC.createGain(); o.frequency.value = fr; g2.gain.setValueAtTime(a, t); g2.gain.exponentialRampToValueAtTime(.0005, t + .45); o.connect(g2).connect(MG || OUT); o.start(t); o.stop(t + .46); } }   // the helmet rings
+/* the headshot "dink" you hear when your shot finds a head (2026-11-17): a bright metallic snap, shorter and higher than
+   the helmet's ring the victim hears */
+function headDink() { if (!AC) return; const t = AC.currentTime, s = AC.createBufferSource(); s.buffer = noiseBuf2(.03, x => Math.pow(1 - x, 4)); const f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2500;
+  const g = AC.createGain(); g.gain.value = .35; s.connect(f).connect(g).connect(dest()); s.start(t);
+  for (const [fr, a] of [[3150, .2], [4720, .1], [6900, .05]]) { const o = AC.createOscillator(), g2 = AC.createGain(); o.frequency.value = fr; g2.gain.setValueAtTime(a, t); g2.gain.exponentialRampToValueAtTime(.0005, t + .2); o.connect(g2).connect(dest()); o.start(t); o.stop(t + .21); } }
+/* damage numbers (2026-11-17): what your hit took, rising off the body; hits on the same player in quick succession add
+   up in one number, as the CS damage-number mods do; a headshot's is gold */
+const DMGN = [];
+function dmgNum(e) { const v = others.get(e.id); if (!v || !e.d) return;
+  const p = v.model.g.position.clone(); p.y += e.h ? 1.8 : 1.3; const now = nowS(), last = DMGN.find(n => n.id === e.id && now - n.t0 < .5);
+  if (last) { last.d += e.d; last.h = last.h || !!e.h; last.t0 = now; last.p.copy(p); last.el.textContent = last.d; last.el.classList.toggle("h", last.h); return; }
+  const el = document.createElement("span"); el.textContent = e.d; if (e.h) el.className = "h"; $("dmgn").appendChild(el); DMGN.push({ id: e.id, d: e.d, h: !!e.h, t0: now, p, el }); }
+function tickDmg() { const now = nowS(), w = innerWidth, h = innerHeight, V = new THREE.Vector3();
+  for (let i = DMGN.length - 1; i >= 0; i--) { const n = DMGN[i], a = (now - n.t0) / .9; if (a >= 1) { n.el.remove(); DMGN.splice(i, 1); continue; }
+    V.copy(n.p).project(camera); const vis = V.z < 1; n.el.style.opacity = vis ? (1 - a * a).toFixed(2) : 0;
+    n.el.style.transform = `translate(${((V.x + 1) / 2 * w).toFixed(0)}px,${((1 - V.y) / 2 * h - a * 34).toFixed(0)}px) translate(-50%,-50%) scale(${(1.15 - Math.min(a * 3, 1) * .15).toFixed(2)})`; } }
 /* pulling the trigger on an empty gun: the hammer falls on nothing */
 let dryAt = 0; function dryFire() { const W0 = WEAPONS[me.w] || {}; if (!AC || !me.alive || me.mag > 0 || me.reloadAt || W0.melee || W0.nade || W0.c4 || nowS() - dryAt < .25) return; dryAt = nowS(); playClip("click", .55, 1.5); }
 function tink(freq = 1800) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = freq; g.gain.setValueAtTime(.15, t); g.gain.exponentialRampToValueAtTime(.001, t + .12); o.connect(g).connect(dest()); o.start(t); o.stop(t + .13); }
@@ -467,7 +486,7 @@ function itemPrice(it) { const P = PRICE[it === "molotov" && myTeam === 0 ? "inc
   if (P[1] != null && P[1] !== myTeam) return null; if (it === "vesthelm" && me.armor >= 100 && !me.helmet) return 350; return P[0]; }
 /* on a computer the menu frees the mouse, as CS does: the cursor shows, a click buys, the view holds still, and closing
    it captures the mouse again (2026-11-17: it was keyboard only). Moving with the keys still works while it is open. */
-function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && GM.m === "comp"; BUY.cat = -1; drawBuy();
+function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && compLike(GM.m); BUY.cat = -1; drawBuy();
   if (TOUCH || was === BUY.open) return;
   if (BUY.open) { BUY.free = true; mouseDown = false; rmb = false; if (document.pointerLockElement) document.exitPointerLock(); }
   else if (BUY.free) { BUY.free = false; if (locked && connected && !document.pointerLockElement) relock(); } }
@@ -495,6 +514,28 @@ function buyKey(code) {
 function onTap(el, fn) { el.addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) fn(b); });
   el.addEventListener("touchend", ev => { const b = ev.target.closest("button"); if (b) { ev.preventDefault(); fn(b); } }); }
 onTap($("buy"), b => b.dataset.n === "close" ? buyMenu(false) : buyKey("Digit" + b.dataset.n));
+/* grenade lineups (2026-11-17): with a smoke in hand on the attacking side, a ring marks each spot the server found a
+   smoke from (its site written over it); standing in one, a dot shows where to look, a circle where it will land, and
+   the prompt says which click (left: full, right: a lob, both: medium) */
+const LU = { list: [], marks: [], aim: null, land: null };
+function setLineups(list) {
+  for (const o of LU.marks) { scene.remove(o); dispose(o); } LU.marks = []; LU.list = list || [];
+  if (!LU.aim) { LU.aim = new THREE.Mesh(new THREE.SphereGeometry(.05, 12, 8), new THREE.MeshBasicMaterial({ color: 0x5ff0ff, depthTest: false, transparent: true }));
+    LU.aim.renderOrder = 9; LU.aim.visible = false; scene.add(LU.aim);
+    LU.land = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.3, 40), new THREE.MeshBasicMaterial({ color: 0x5ff0ff, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }));
+    LU.land.rotation.x = -Math.PI / 2; LU.land.visible = false; scene.add(LU.land); }
+  for (const l of LU.list) { const g = new THREE.Group(); g.position.set(l.p[0], l.p[1] + .03, l.p[2]);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(.32, .42, 32), new THREE.MeshBasicMaterial({ color: 0x5ff0ff, transparent: true, opacity: .8, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; g.add(ring);
+    const tag = label("Smoke " + l.site, "#5ff0ff"); tag.position.y = 1.2; g.add(tag); g.visible = false; scene.add(g); LU.marks.push(g); }
+}
+function tickLineups() {
+  if (!LU.aim) return "";
+  const on = !!(GM && compLike(GM.m) && me.alive && me.w === "smoke" && myTeam === 1 && LU.list.length); let here = null;
+  LU.list.forEach((l, i) => { LU.marks[i].visible = on; if (on && Math.hypot(me.pos.x - l.p[0], me.pos.z - l.p[2]) < .45 && Math.abs(me.pos.y - l.p[1]) < 1) here = l; });
+  LU.aim.visible = LU.land.visible = !!here; if (!here) return "";
+  const e = camera.position; LU.aim.position.copy(e).addScaledVector(viewDir(here.yaw, here.pitch), 6); LU.land.position.set(here.land[0], here.land[1] + .05, here.land[2]);
+  return `Smoke ${here.site}: put the crosshair on the blue dot, stand still, then ${here.str === 1 ? "left click" : here.str === 0 ? "right click" : "hold both buttons"}`;
+}
 /* the two sites, marked in the world by a faint ring on the ground (their letters are on the radar, as in CS) */
 const siteMarks = [];
 function setSites(list) {
@@ -509,7 +550,7 @@ const bombObj = (() => { const g = new THREE.Group(); const b = new THREE.Mesh(n
   const led = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); led.scale.setScalar(.35); led.position.set(-.08, .14, 0); g.add(led); g.userData.led = led;
   g.visible = false; scene.add(g); return g; })();
 function syncComp(m) {
-  if (!GM || GM.m !== "comp") { bombObj.visible = false; return; }
+  if (!GM || !compLike(GM.m)) { bombObj.visible = false; return; }
   const bp = GM.bp, bd = m.me && m.me.bd;
   if (bp) { bombObj.visible = true; bombObj.position.set(bp[0], bp[1], bp[2]); } else if (bd) { bombObj.visible = true; bombObj.position.set(bd[0], bd[1], bd[2]); } else bombObj.visible = false;
   bombObj.userData.planted = !!bp;
@@ -518,7 +559,7 @@ function syncComp(m) {
 let TMO = new Map();
 function beep(f = 2200, len = .06, vol = .35) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g2 = AC.createGain(); o.frequency.value = f; g2.gain.setValueAtTime(vol, t); g2.gain.exponentialRampToValueAtTime(.001, t + len); o.connect(g2).connect(dest()); o.start(t); o.stop(t + len + .01); }
 function tickComp(dt) {
-  const comp = !!(GM && GM.m === "comp"); document.body.classList.toggle("comp", comp);
+  const comp = !!(GM && compLike(GM.m)); document.body.classList.toggle("comp", comp);
   if (!comp) { if (BUY.open) buyMenu(false); return; }
   // money, with what just came in or went out
   const mo = me.mo || 0; if (lastMo != null && mo !== lastMo) { $("modelta").textContent = (mo > lastMo ? "+$" : "-$") + Math.abs(mo - lastMo); $("modelta").className = mo > lastMo ? "up" : "dn"; moFlash = 1.6; } lastMo = mo;
@@ -642,7 +683,7 @@ function onDeath() {
     ${e && !self ? `<div class="km"><span><b>${esc(wn)}</b>, ${e.kd} m</span></div>` : ""}
     ${!self ? dmgLine(kid, hp) : ""}
     <div class="rs"><span id="kcrt">Respawning</span><span class="bar2"><i id="kcr"></i></span></div>`;
-  $("kc").hidden = !!(GM && GM.m !== "dm"); myDeath = null;
+  $("kc").hidden = !!(GM && !dmLike(GM.m)); myDeath = null;
 }
 function onRespawn() {
   muffle(false); document.body.classList.remove("dead");
@@ -725,7 +766,7 @@ function connect(q) {
   // relative to the page, so the game works at / or under a sub-path such as /play/ behind a reverse proxy
   const wsu = new URL("ws?" + new URLSearchParams(q), location.href); wsu.protocol = wsu.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(wsu.href);
-  ws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.t === "s") onSnap(m); else if (m.t === "w") onWelcome(m); else if (m.t === "r") onRoster(m.r); else if (m.t === "x") refused = m.why; else if (m.t === "newmap") { movingTo = m.why; $("big").innerHTML = `New map<small>${esc(m.why)}, loading${m.best ? `<br>Top of the last map: ${esc(m.best.name)}, ${m.best.k} kills` : ""}</small>`;
+  ws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.t === "s") onSnap(m); else if (m.t === "kc") kcGot(m); else if (m.t === "hl") hlGot(m); else if (m.t === "dcres") onDcResult(m); else if (m.t === "w") onWelcome(m); else if (m.t === "r") onRoster(m.r); else if (m.t === "x") refused = m.why; else if (m.t === "newmap") { movingTo = m.why; $("big").innerHTML = `New map<small>${esc(m.why)}, loading${m.best ? `<br>Top of the last map: ${esc(m.best.name)}, ${m.best.k} kills` : ""}</small>`;
     try { sessionStorage.setItem("rejoin", JSON.stringify({ room: currentRoom, team, t: Date.now() })); } catch (e) {} setTimeout(() => location.reload(), m.best ? 3500 : 1500); } else if (m.t === "P") { ping = Math.round((nowS() - m.n) * 1000); ws.send(JSON.stringify({ t: "q", ms: ping })); } };
   ws.onclose = () => { if (!connected) { $("load").textContent = refused || "Could not join that room"; ws = null; refused = ""; $("start").style.display = ""; document.exitPointerLock && document.exitPointerLock(); return; }
     connected = false; if (movingTo) return;
@@ -735,7 +776,7 @@ function connect(q) {
 let roomNoteUntil = 0, rejoined = false, currentRoom = "DAILY", movingTo = "", refused = "", GM = null, lastBoard = [], lastSpawn = 0, rosterRaw = null, mapLoadedFor = null;
 async function onWelcome(m) {
   const sock = ws;
-  myId = m.id; myTeam = m.team; srvOffset = m.tm - nowS(); if (m.radar) radarMap(m.radar); setSites(m.sites); { const cm = sleeveMaterial(myTeam); sleeve.map = cm.map; sleeve.bumpMap = cm.bumpMap; sleeve.bumpScale = cm.bumpScale; sleeve.color.set(0xffffff); sleeve.needsUpdate = true; }   // your own sleeves in your team\'s camouflage
+  myId = m.id; myTeam = m.team; LADDER = m.ladder || null; setLineups(m.lineups); srvOffset = m.tm - nowS(); if (m.radar) radarMap(m.radar); setSites(m.sites); { const cm = sleeveMaterial(myTeam); sleeve.map = cm.map; sleeve.bumpMap = cm.bumpMap; sleeve.bumpScale = cm.bumpScale; sleeve.color.set(0xffffff); sleeve.needsUpdate = true; }   // your own sleeves in your team\'s camouflage
   currentRoom = m.room;
   $("roomtag").textContent = m.room === "DAILY" ? m.title.toUpperCase() : "ROOM " + m.room; $("rcode").textContent = m.room;
   if (m.room !== "DAILY") { roomNoteUntil = nowS() + 8; if (!locked) $("share").hidden = false; } history.replaceState(null, "", m.room === "DAILY" ? "./" : "?room=" + m.room);
@@ -754,9 +795,9 @@ function hpCell(x) {
 }
 function onRoster(r) {
   rosterRaw = r;
-  roster.clear(); for (const [id, name, team, bot, k, d, p, a, dm, fin] of r) roster.set(id, { id, name, team, bot, k, d, p, a: a || 0, dm: dm || 0, fin: FINISHES[fin] || "factory" });
+  roster.clear(); for (const [id, name, team, bot, k, d, p, a, dm, fin, gl] of r) roster.set(id, { id, name, team, bot, k, d, p, a: a || 0, dm: dm || 0, fin: FINISHES[fin] || "factory", gl });
   const rows = [...roster.values()].sort((a, b) => a.team - b.team || b.k - a.k);
-  $("board").innerHTML = (GM && GM.ph === "over" ? `<h3>${esc(GM.msg)}</h3>` : "") + `<table><tr><th>Atlas / Ember</th><th>HP</th><th>K</th><th>A</th><th>D</th><th>DMG</th>${GM && GM.m === "comp" ? "<th>$</th>" : ""}<th>ping</th></tr>` + rows.map(x => `<tr class="${x.team ? "t" : "ct"}${x.id === myId ? " me" : ""}"><td>${esc(x.name)}${x.bot ? " <small>bot</small>" : ""}</td><td>${hpCell(x)}</td><td>${x.k}</td><td>${x.a}</td><td>${x.d}</td><td>${x.dm}</td>${GM && GM.m === "comp" ? `<td>${x.team === myTeam && TMO.has(x.id) ? "$" + TMO.get(x.id) : ""}</td>` : ""}<td>${x.bot ? "" : x.p}</td></tr>`).join("") + "</table>";
+  $("board").innerHTML = (GM && GM.ph === "over" ? `<h3>${esc(GM.msg)}</h3>` : "") + `<table><tr><th>Atlas / Ember</th><th>HP</th><th>K</th><th>A</th><th>D</th><th>DMG</th>${GM && compLike(GM.m) ? "<th>$</th>" : ""}<th>ping</th></tr>` + rows.map(x => `<tr class="${x.team ? "t" : "ct"}${x.id === myId ? " me" : ""}"><td>${esc(x.name)}${x.bot ? " <small>bot</small>" : ""}</td><td>${hpCell(x)}</td><td>${x.k}</td><td>${x.a}</td><td>${x.d}</td><td>${x.dm}</td>${GM && compLike(GM.m) ? `<td>${x.team === myTeam && TMO.has(x.id) ? "$" + TMO.get(x.id) : ""}</td>` : ""}<td>${x.bot ? "" : x.p}</td></tr>`).join("") + "</table>";
   lastBoard = rows;
   for (const o of others.values()) if (roster.get(o.id) && o.named !== roster.get(o.id).name) { o.model.g.remove(o.model.tag); dispose(o.model.tag); o.model.tag = label(roster.get(o.id).name, o.team ? "#ffd27a" : "#9cc6ff"); o.model.tag.position.y = 2.05; o.model.tag.userData.enemy = o.team !== myTeam; if (o.model.tag.userData.enemy) o.model.tag.material.depthTest = true; o.model.tag.userData.draw(o.hp ?? 100); o.model.g.add(o.model.tag); o.named = roster.get(o.id).name; }
 }
@@ -847,7 +888,9 @@ function onEvent(e) {
   else if (e.k === "roundEnd") tink(e.w === myTeam ? 1600 : 500);
   else if (e.k === "match") tink(e.w === myTeam ? 2000 : 400);
   else if (e.k === "hit") { const v = others.get(e.id); if (v) puff(v.model.g.position.clone().setY(v.model.g.position.y + (e.h ? 1.65 : 1.2)), 0x9a1010, 8, .1, .4);
-    if (e.id === myId) { hurtFrom(e.by); $("hurt").style.boxShadow = "inset 0 0 140px rgba(255,40,30,.55)"; setTimeout(() => $("hurt").style.boxShadow = "", 160); bodyHit(!!e.h); } else if (e.by === myId) { tink(e.h ? 2200 : 1300); hitmark = performance.now() + 120; window.__hits = (window.__hits || 0) + 1; } }
+    if (e.id === myId) { hurtFrom(e.by); $("hurt").style.boxShadow = "inset 0 0 140px rgba(255,40,30,.55)"; setTimeout(() => $("hurt").style.boxShadow = "", 160); bodyHit(!!e.h); } else if (e.by === myId) { if (e.h && SET.dink) headDink(); else tink(e.h ? 2200 : 1300); if (SET.dmg) dmgNum(e); hitmark = performance.now() + 120; window.__hits = (window.__hits || 0) + 1; } }
+  else if (e.k === "level") { const r = roster.get(e.id); if (r) r.gl = e.l;
+    if (e.id === myId && LADDER) { const w = LADDER[Math.min(e.l, LADDER.length - 1)]; feed(e.down ? `Knifed: down to level ${e.l + 1}` : w === "knife" ? "Last level: the knife" : `Level ${e.l + 1}: ${esc((WEAPONS[w] || {}).name || w)}`); if (!e.down) tink(1500); } }
   else if (e.k === "kill") { const hs = e.h ? " hs" : ""; if (e.id === myId) { killerId = e.by; myDeath = e; }
     const tags = [e.bl && "blind", e.ns && "no scope", e.sm && "through smoke", e.pn && "wallbang"].filter(Boolean).map(t => `<small class="tg">${t}</small>`).join(" ");
     feed(`${esc(nameOf(e.by))}${e.a ? ` <small>+</small> ${esc(nameOf(e.a))}${e.fa ? " <small>(flash)</small>" : ""}` : ""} <small>${esc((WEAPONS[WIDS[e.g]] || {}).name || "")}</small> ${tags} <b>${e.h ? "&#9673;" : "&#8594;"}</b> ${esc(nameOf(e.id))}`, (e.by === myId || e.id === myId || e.a === myId ? "mine" : "") + hs); }
@@ -935,13 +978,59 @@ onTap($("vote"), b => { if (!VOTEON) return; if (ws && ws.readyState === 1) ws.s
 const SNDST = { last: "" }; let inspectT = 0;   // F: the weapon turned over in hand for a look, as in CS   // the last state the mechanical sounds were played for
 /* spectating (2026-11-14): dead in a round mode, after the death cam, you watch a living teammate through their eyes;
    a click moves to the next one, as in CS */
+/* Gun Game (2026-11-17): the ladder from the server, your level from the roster (and the level events between) */
+const dmLike = m => m === "dm" || m === "gg", compLike = m => m === "comp" || m === "wing";
+let LADDER = null; const myLevel = () => ((roster.get(myId) || {}).gl) || 0;
 const SPEC = { id: 0 };
+/* the killcam (2026-11-17): soon after you die, the last moments again through your killer's eyes, their gun, their shots
+   and their sound, with you (and whoever was near) where you were. The server sends the record to the dead player only.
+   Rounds: 3 s, then spectating. Deathmatch: the part that fits before the 3 s respawn. A click skips it. */
+const KC = { hl: null, hls: 0, msgs: 0, deaths: 0, played: 0, rec: null, got: -9, start: 0, dur: 0, on: false, temps: new Map(), shot: 0, skip: false };
+const KC_DELAY = .5;
+function kcGot(m) { const h = new Map(); for (const [id, team, rows] of m.h) if (rows.length) h.set(id, { team, rows }); KC.rec = { by: m.by, at: m.at, h }; KC.got = nowS(); KC.msgs++; }
+function kcBegin() {   // at the death: take the record that came with it, if any
+  KC.deaths++; if (KC.hl && kcActive()) return; KC.hl = null; KC.skip = false; KC.on = false; if (!SET.kcam || !KC.rec || nowS() - KC.got > 3 || !KC.rec.h.has(KC.rec.by)) { KC.rec = null; return; }
+  KC.start = diedAt + KC_DELAY; KC.dur = GM && !dmLike(GM.m) ? 3 : 3 - KC_DELAY - .1; KC.shot = KC.rec.at - KC.dur; KC.played++;
+}
+/* a recorded state at time t, between its two rows; shots counted in (from, t] */
+function kcAt(rows, t) {
+  let i = rows.findIndex(r => r[0] >= t); if (i < 0) i = rows.length - 1; const b = rows[i], a = rows[Math.max(0, i - 1)];
+  const k = b[0] > a[0] ? clamp((t - a[0]) / (b[0] - a[0]), 0, 1) : 1, L = (u, v) => u + (v - u) * k;
+  return { x: L(a[1], b[1]), y: L(a[2], b[2]), z: L(a[3], b[3]), yaw: lerpAng(a[4], b[4], k), pitch: L(a[5], b[5]), duck: L(a[6], b[6]), alive: (k < .5 ? a : b)[7], w: WIDS[(k < .5 ? a : b)[8]] || "ak",
+    speed: b[0] > a[0] ? Math.hypot(b[1] - a[1], b[3] - a[3]) / (b[0] - a[0]) : 0 };
+}
+const kcShots = (rows, t0, t1) => rows.reduce((n, r) => n + (r[0] > t0 && r[0] <= t1 ? r[9] : 0), 0);
+function kcActive() { return !!KC.rec && (!!KC.hl || !me.alive) && !KC.skip && nowS() >= KC.start && nowS() < KC.start + KC.dur; }
+/* a round's highlight (2026-11-17): the same player as the killcam, for everyone, alive or not, through the eyes of the
+   round's best player, with what they did as its title */
+function hlGot(m) { if (!SET.hl) return; const h = new Map(); for (const [id, team, rows] of m.h) if (rows.length) h.set(id, { team, rows }); if (!h.has(m.by)) return;
+  KC.rec = { by: m.by, at: m.t1, h }; KC.hl = { title: m.title }; KC.skip = false; KC.start = nowS() + .2; KC.dur = m.t1 - m.t0; KC.shot = m.t0; KC.hls++; }
+function kcEnd() { for (const g of KC.temps.values()) { scene.remove(g.g); dispose(g.g); } KC.temps.clear(); KC.on = false; KC.hl = null; }
+/* the camera through the killer's eyes, their gun in hand; returns the replay time */
+function kcCamera() {
+  const t = KC.rec.at - KC.dur + (nowS() - KC.start), K = kcAt(KC.rec.h.get(KC.rec.by).rows, t);
+  camera.position.set(K.x, K.y + 1.62 - K.duck * .45, K.z); camera.rotation.order = "YXZ"; camera.rotation.set(K.pitch, K.yaw, 0);
+  const fired = kcShots(KC.rec.h.get(KC.rec.by).rows, KC.shot, t); KC.shot = t;
+  if (fired) { gunSound(K.w, .9); flash = .05; kick = Math.min(3, kick + 1); }
+  return { t, K };
+}
+/* everyone in the record where they were then; those not in it are hidden for the replay */
+function kcBodies(t) {
+  for (const o of others.values()) o.model.g.visible = false;
+  for (const [id, r] of KC.rec.h) { if (id === KC.rec.by) continue;
+    let m = id !== myId && others.get(id) ? others.get(id).model : null;
+    if (!m) { m = KC.temps.get(id); if (!m) { m = person(r.team, nameOf(id)); KC.temps.set(id, m); } }
+    const S = kcAt(r.rows, t), g = m.g; g.visible = true; g.position.set(S.x, S.y, S.z); g.rotation.y = S.yaw;
+    m.phase = (m.phase || 0) + S.speed * .016 * 3.2; m.sd.pose(S.alive ? S.speed : 0, m.phase, S.duck, S.alive ? S.pitch : 0);
+    g.rotation.x = S.alive ? 0 : -Math.PI / 2; if (m.tag) m.tag.visible = !S.alive ? false : r.team === myTeam; }
+}
 const specList = () => [...others.values()].filter(o => o.team === myTeam && o.alive && !o.gone && o.buf.length).sort((a, b) => a.id - b.id);
-const spectating = () => !me.alive && GM && GM.m !== "dm" && nowS() - diedAt > 3 && specList().length > 0;
+const spectating = () => !me.alive && GM && !dmLike(GM.m) && nowS() - diedAt > 3 && !kcActive() && specList().length > 0;
 function specNext() { const L = specList(); if (!L.length) { SPEC.id = 0; return; } const i = L.findIndex(o => o.id === SPEC.id); SPEC.id = L[(i + 1) % L.length].id; }
 function render(dt) {
   smooth.multiplyScalar(Math.exp(-dt * 12));
-  if (wasAlive && !me.alive) onDeath(); else if (!wasAlive && me.alive) { onRespawn(); SPEC.id = 0; } wasAlive = me.alive;
+  if (wasAlive && !me.alive) { onDeath(); kcBegin(); } else if (!wasAlive && me.alive) { onRespawn(); SPEC.id = 0; } wasAlive = me.alive;
+  const kc = kcActive(); if (!kc && KC.on) kcEnd(); KC.on = kc; let kcT = null;
   const spec = spectating() ? (others.get(SPEC.id) && others.get(SPEC.id).alive && others.get(SPEC.id).team === myTeam ? others.get(SPEC.id) : (specNext(), others.get(SPEC.id))) : null;
   if (!spec) SPEC.id = 0;
   const dk = me.alive ? 0 : clamp((nowS() - diedAt) / .6, 0, 1), de = 1 - Math.pow(1 - dk, 3);   // the fall, eased
@@ -951,13 +1040,16 @@ function render(dt) {
   else if (!me.alive && others.get(killerId)) { const d = others.get(killerId).model.g.position.clone().sub(camera.position); d.y += 1.2; camera.rotation.y = lerpAng(camera.rotation.y, Math.atan2(-d.x, -d.z), Math.min(1, dt * 4)); camera.rotation.x += (Math.atan2(d.y, Math.hypot(d.x, d.z)) - camera.rotation.x) * Math.min(1, dt * 4); }
   else { camera.rotation.y = me.yaw - me.punchX * .45; camera.rotation.x = me.pitch + me.punchY * .45; }
   if (spec) { const p = spec.model.g.position; camera.position.set(p.x, p.y + 1.62 - (spec.vd || 0) * .45, p.z); camera.rotation.set(spec.vp || 0, spec.vy || 0, 0); }
-  if (!!spec !== !!SPEC.was) { SPEC.was = !!spec; document.body.classList.toggle("dead", !me.alive && !spec); muffle(!me.alive && !spec); }   // their view in full colour and sound, as in CS
-  $("ammo").style.visibility = spec ? "hidden" : "";
-  $("spec").hidden = !spec; if (spec) $("spec").innerHTML = `<small>Spectating</small> ${esc(nameOf(spec.id))} <span>${spec.hp ?? ""}${spec.hp != null ? " HP" : ""}</span> <span>${esc((WEAPONS[spec.w] || {}).name || "")}</span>`;
+  if (kc) { const r = kcCamera(); kcT = r.t; KC.w = r.K.w; }
+  document.body.classList.toggle("kcam", kc); document.body.classList.toggle("hlcam", kc && !!KC.hl);
+  const watch = !!spec || kc;
+  if (watch !== !!SPEC.was) { SPEC.was = watch; document.body.classList.toggle("dead", !me.alive && !watch); muffle(!me.alive && !watch); }   // their view in full colour and sound, as in CS
+  $("ammo").style.visibility = spec || kc ? "hidden" : "";
+  $("spec").hidden = !spec && !kc; if (kc && KC.hl) $("spec").innerHTML = `<small>Highlight</small> ${esc(nameOf(KC.rec.by))} <span>${esc(KC.hl.title)}</span>`; else if (kc) $("spec").innerHTML = `<small>Killcam</small> ${esc(nameOf(KC.rec.by))} <span>${esc((WEAPONS[KC.w] || {}).name || "")}</span>`; else if (spec) $("spec").innerHTML = `<small>Spectating</small> ${esc(nameOf(spec.id))} <span>${spec.hp ?? ""}${spec.hp != null ? " HP" : ""}</span> <span>${esc((WEAPONS[spec.w] || {}).name || "")}</span>`;
   if (shake > 0) { const a = shake * shake * .035; camera.rotation.x += (Math.random() - .3) * a; camera.rotation.y += (Math.random() - .5) * a; camera.rotation.z += (Math.random() - .5) * a * .6; shake = Math.max(0, shake - dt * 3.2); }
   const sp = Math.hypot(me.vel.x, me.vel.z); bob += dt * sp * 1.7; kick = Math.max(0, kick - dt * (kick > 1.5 ? 9 : 14)); fovPunch = Math.max(0, fovPunch - dt * 6); flash = Math.max(0, flash - dt);
   const W0 = wpn(me), scoped = !!(W0.zoom && me.zoom), deploying = me.clock < me.deployUntil;
-  for (const w of WIDS) VIEW[w].visible = w === (spec ? spec.w : me.w);
+  for (const w of WIDS) VIEW[w].visible = w === (kc ? KC.w : spec ? spec.w : me.w);
   swing = Math.max(0, swing - dt * 5);
   gun.position.set(GUNPOS.x + Math.cos(bob) * .006 * (me.onGround ? 1 : 0) - swing * .06, GUNPOS.y + Math.abs(Math.sin(bob)) * .007 - (deploying ? .12 : 0), GUNPOS.z + kick * .03 - swing * .1);
   muzzle.position.set(GUNPOS.x, GUNPOS.y + .025, GUNPOS.z - (MUZZLE[me.w] || .6) * .62);
@@ -973,23 +1065,23 @@ function render(dt) {
     if (SNDST.last && p0[3] === "0" && me.landed) step(.75, true);                          // the landing
     SNDST.last = st; }
   if (me.alive && me.onGround && sp > 3.5) { myStep += sp * dt * 3.2; if (myStep > Math.PI) { myStep -= Math.PI; step(.5); } }
-  tickParts(dt); tickShells(dt); probeEnv(); if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 700); tickFx(dt); drawRadar(); tickComp(dt); tickTalk();
-  gun.visible = ((me.alive || nowS() - diedAt < .45) && !scoped) || !!spec; if (!me.alive) { gun.position.y -= de * .5; gun.rotation.z += de * 1.1; } muzzle.visible = flash > 0 && !W0.melee && !scoped; muzzle.material.rotation = Math.random() * 6;
-  const kcam = !spec && !me.alive && nowS() - diedAt > 1.1 && others.get(killerId), fov = kcam ? 46 : (scoped ? 2 * Math.atan(Math.tan(SET.fov / 2 * DEG) * W0.zoom[me.zoom]) / DEG : SET.fov) + fovPunch * 5;
+  tickParts(dt); tickShells(dt); probeEnv(); if (muzzleLight && muzzleLight.intensity > 0) muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 700); tickFx(dt); tickDmg(); drawRadar(); tickComp(dt); tickTalk();
+  gun.visible = ((me.alive || nowS() - diedAt < .45) && !scoped) || !!spec || kc; if (!me.alive && !kc) { gun.position.y -= de * .5; gun.rotation.z += de * 1.1; } muzzle.visible = flash > 0 && (kc ? !(WEAPONS[KC.w] || {}).melee : !W0.melee && !scoped); muzzle.material.rotation = Math.random() * 6;
+  const kcam = !spec && !kc && !me.alive && nowS() - diedAt > 1.1 && others.get(killerId), fov = kcam ? 46 : (scoped ? 2 * Math.atan(Math.tan(SET.fov / 2 * DEG) * W0.zoom[me.zoom]) / DEG : SET.fov) + fovPunch * 5;
   if (Math.abs(camera.fov - fov) > .01) { camera.fov = kcam ? camera.fov + (fov - camera.fov) * Math.min(1, dt * 2.5) : fov; camera.updateProjectionMatrix(); }
   $("scope").style.display = scoped && me.alive ? "block" : "none";
   $("xh").style.display = scoped || me.w === "awp" || !me.alive ? "none" : "block";
   nearPick = null; let bd = 1.6;
   for (const p of pickups.values()) { if (p.mesh.userData.spin) p.mesh.userData.spin.rotation.y += dt * 1.5;
     if (p.kind === 0 && me.alive && !p.away) { const d = Math.hypot(me.pos.x - p.pos.x, me.pos.z - p.pos.z); if (d < bd && Math.abs(me.pos.y - p.pos.y) < 1.3) { bd = d; nearPick = p; } } }
-  if (TOUCH) { const defuseHere = !!(GM && GM.m === "comp" && GM.bp && myTeam === 0 && me.alive && Math.hypot(me.pos.x - GM.bp[0], me.pos.z - GM.bp[2]) < 1.4);
+  if (TOUCH) { const defuseHere = !!(GM && compLike(GM.m) && GM.bp && myTeam === 0 && me.alive && Math.hypot(me.pos.x - GM.bp[0], me.pos.z - GM.bp[2]) < 1.4);
     $("tUse").hidden = !nearPick && !defuseHere; $("tUse").textContent = defuseHere ? "Defuse" : "Pick up";
     $("tZoom").hidden = !(W0.zoom || W0.burst || W0.nade); $("tZoom").textContent = W0.nade ? "Lob" : W0.burst ? "Burst" : "Zoom";
     $("tKnife").textContent = me.w === "knife" && me.zeus ? "Zeus" : "Knife"; }   // the knife key: a second tap brings out the Zeus
   const mine = nearPick ? (WEAPONS[nearPick.w].slot === "s" ? me.sec : me.prim) : null;
-  $("prompt").textContent = nearPick ? "E  pick up " + WEAPONS[nearPick.w].name + (mine ? " (drops your " + WEAPONS[mine].name + ")" : "") : "";
-  $("wname").textContent = W0.name + (scoped ? "  x" + Math.round(1 / W0.zoom[me.zoom]) : "") + (W0.burst && me.burstOn ? "  burst" : "");
-  drawOthers();
+  $("prompt").textContent = nearPick ? "E  pick up " + WEAPONS[nearPick.w].name + (mine ? " (drops your " + WEAPONS[mine].name + ")" : "") : ""; { const lu = tickLineups(); if (lu && !nearPick) $("prompt").textContent = lu; }
+  $("wname").textContent = W0.name + (GM && GM.m === "gg" && LADDER && myLevel() < LADDER.length - 1 ? "  next " + ((WEAPONS[LADDER[myLevel() + 1]] || {}).name || "") : "") + (scoped ? "  x" + Math.round(1 / W0.zoom[me.zoom]) : "") + (W0.burst && me.burstOn ? "  burst" : "");
+  drawOthers(); if (kc) kcBodies(kcT);
   const pn = performance.now(); for (let i = tracers.length - 1; i >= 0; i--) if (pn > tracers[i].userData.t) { scene.remove(tracers[i]); tracers[i].geometry.dispose(); tracers.splice(i, 1); }
   const hpShown = SPEC.id && others.get(SPEC.id) ? others.get(SPEC.id).hp ?? 0 : me.hp;
   $("hpv").textContent = hpShown; $("hpv").style.color = hpShown > 100 ? "#7fb6ff" : hpShown <= 30 ? "#ef5b4b" : ""; const noAmmo = W0.melee || W0.nade || W0.c4; $("mag").textContent = W0.nade ? me.nades[me.w] : W0.melee || W0.c4 ? "-" : me.reloadAt ? "--" : me.mag; { const full = (WEAPONS[me.w] || {}).mag || 30, lowA = !noAmmo && !me.reloadAt && me.mag <= Math.max(1, Math.floor(full * .3));
@@ -1002,10 +1094,10 @@ function render(dt) {
     const ring = $("rldr"), on = !!me.reloadAt && me.alive && !noAmmo; ring.style.opacity = on ? 1 : 0;
     if (on) ring.querySelector("circle.f").style.strokeDashoffset = (113.1 * clamp((me.reloadAt - me.clock) / (W0.reload || 2), 0, 1)).toFixed(1); } $("res").textContent = W0.melee || W0.nade || W0.c4 ? "" : "/ " + me.res; $("ping").textContent = ping + " ms";
   if (connected && GM) {
-    const mm = t => Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"), rounds = GM.m !== "dm";
+    const mm = t => Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"), rounds = !dmLike(GM.m);
     if (!me.alive && !rounds && $("kcr")) { const left = Math.max(0, respawnIn); $("kcr").style.width = (100 * (1 - left / 3)).toFixed(1) + "%"; $("kcrt").textContent = left > .05 ? "Back in " + left.toFixed(1) + " s" : "Back in"; }
-    $("clock").textContent = GM.bp && GM.ph === "live" ? "BOMB" : mm(GM.tl); $("clock").classList.toggle("bomb", !!(GM.bp && GM.ph === "live")); $("sct").textContent = GM.sc[0]; $("st").textContent = GM.sc[1]; $("rnd").textContent = rounds ? "ROUND " + GM.rn : "DM";
-    $("big").innerHTML = GM.ph === "over" ? `${esc(GM.msg)}<small>next match in ${GM.tl} s</small>` : GM.ph === "end" ? `${esc(GM.msg)}` : GM.ph === "freeze" ? `Round ${GM.rn}<small>starts in ${GM.tl}</small>` : ""; $("msg").classList.toggle("low", !!$("big").innerHTML);   // a round message above: the note steps down below it
+    $("clock").textContent = GM.dc ? fmtT(GM.dc.el + GM.dc.d * GM.dc.pen) : GM.bp && GM.ph === "live" ? "BOMB" : mm(GM.tl); $("clock").classList.toggle("bomb", !!(GM.bp && GM.ph === "live")); $("sct").textContent = GM.sc[0]; $("st").textContent = GM.sc[1]; $("rnd").textContent = GM.dc ? "KILLS " + GM.dc.k + "/" + GM.dc.need : rounds ? "ROUND " + GM.rn : GM.m === "gg" && LADDER ? "LEVEL " + Math.min(myLevel() + 1, LADDER.length) + "/" + LADDER.length : "DM";
+    $("big").innerHTML = GM.ph === "over" ? `${esc(GM.msg)}<small>${GM.dc ? "your result is on the menu" : `next match in ${GM.tl} s`}</small>` : GM.ph === "end" ? `${esc(GM.msg)}` : GM.ph === "freeze" ? (GM.dc ? `${GM.dc.need} kills, fast<small>starts in ${GM.tl}</small>` : `Round ${GM.rn}<small>starts in ${GM.tl}</small>`) : ""; $("msg").classList.toggle("low", !!$("big").innerHTML);   // a round message above: the note steps down below it
     $("board").style.display = GM.ph === "over" || keys.Tab ? "block" : "none";
     $("msg").innerHTML = !me.alive ? (rounds ? (GM.ph === "live" ? "You are dead<small>you play again next round</small>" : "") : "") : nowS() < roomNoteUntil ? `Room ${currentRoom}<small>${TOUCH ? "Pause" : "Esc"} for the invite link</small>` : protect > 0 ? `<small>spawn protection ${protect.toFixed(1)} s</small>` : "";
   }
@@ -1015,7 +1107,7 @@ function render(dt) {
   $("xh").classList.toggle("hit", pn < hitmark);
   $("dbg").textContent = DEBUG ? `quality step ${qLevel}  ping ${ping} ms  interp ${Math.round(interp * 1000)} ms  unconfirmed commands ${pending.length}\nspeed ${(sp / U).toFixed(0)} u/s ${me.onGround ? "ground" : "air"}\npos ${me.pos.x.toFixed(1)} ${me.pos.y.toFixed(2)} ${me.pos.z.toFixed(1)}  correction ${(smooth.length() * 100).toFixed(1)} cm\nothers ${others.size}` : "";
   shadowT += dt; if (shadowT > .05) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
-  if (ARMS) poseArms(me.w);
+  if (ARMS) poseArms(KC.on ? KC.w : SPEC.id && others.get(SPEC.id) ? others.get(SPEC.id).w : me.w);
   renderer.render(scene, camera);
 }
 
@@ -1028,8 +1120,8 @@ let gameMode = "dm", botDiff = "normal";
 const DIFFS = ["easy", "normal", "hard", "expert"];   // one button that steps through them, as compact as the menu needs
 $("bdiff").addEventListener("click", () => { botDiff = DIFFS[(DIFFS.indexOf(botDiff) + 1) % DIFFS.length]; $("bdiff").textContent = botDiff[0].toUpperCase() + botDiff.slice(1); });   // Deathmatch or Competitive, for a room you create (2026-11-14)
 $("gmode").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; gameMode = b.dataset.m;
-  for (const x of $("gmode").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } $("frz").hidden = gameMode !== "comp"; });
-$("bots").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; withBots = b.dataset.b === "1"; $("botn").classList.toggle("off", !withBots); $("bdiff").classList.toggle("off", !withBots);
+  for (const x of $("gmode").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } $("frz").hidden = !compLike(gameMode); $("botn").classList.toggle("off", !withBots || gameMode === "wing"); });
+$("bots").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; withBots = b.dataset.b === "1"; $("botn").classList.toggle("off", !withBots || gameMode === "wing"); $("bdiff").classList.toggle("off", !withBots);
   for (const x of $("bots").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } });
 document.querySelector(".priv .tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
   for (const x of b.parentNode.children) { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); $(x.dataset.tab).hidden = x !== b; }
@@ -1055,6 +1147,46 @@ async function loadToday() {
   $("online").textContent = r.online + " playing";
   const bg = $("bg"), url = r.preview; if (bg.dataset.src !== url) { bg.dataset.src = url; const im = new Image(); im.onload = () => { bg.style.backgroundImage = `url(${url})`; requestAnimationFrame(() => bg.classList.add("in")); }; im.src = url; }
 }
+/* the board's tabs (2026-11-17); Stats shows the lifetime numbers for the name in the box, and the all-time top */
+$("lbtabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
+  for (const x of $("lbtabs").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); $(x.dataset.p).hidden = x !== b; }
+  if (b.dataset.p === "lbStats") loadStats(); if (b.dataset.p === "lbDc" && window.loadDc) window.loadDc(); });
+async function loadStats() {
+  const nm = $("name").value.trim(); let r = null; try { r = await fetch("stats?name=" + encodeURIComponent(nm), { cache: "no-store" }).then(x => x.json()); } catch (e) {}
+  const el = $("lbStats"); if (!r) { el.innerHTML = `<p class="none">Stats are not available right now</p>`; return; }
+  const m = r.me, cell = (v, l) => `<div><b>${v}</b><small>${l}</small></div>`;
+  el.innerHTML = (m ? `<span class="eyebrow">${esc(m.name)}, #${m.rank} of ${m.players}</span>
+    <div class="stg">${cell(m.k, "Kills")}${cell(m.d, "Deaths")}${cell(m.kd, "K/D")}${cell(m.hs + "%", "Headshots")}${cell(m.acc + "%", "Accuracy")}${cell(m.a, "Assists")}</div>
+    <div class="stl">${m.gun ? `<span>Favourite gun <small>${esc(m.gun.name)}, ${m.gun.k} kills</small></span>` : ""}${m.map ? `<span>Best map <small>${esc(m.map.name)}, ${m.map.k} kills</small></span>` : ""}<span>Damage dealt <small>${m.dmg}</small></span></div>`
+    : `<p class="none">${nm ? `No stats for ${esc(nm)} yet. Play a game under this name and they start counting.` : "Type your name to see your stats."}</p>`)
+    + `<span class="eyebrow">All time</span><ol>${(r.top || []).map((t, i) => `<li><i>${i + 1}</i><b>${esc(t.name)}</b><span>${t.k}<small>K</small></span><span>${t.kd}<small>KD</small></span></li>`).join("") || `<li class="none">Nobody yet</li>`}</ol>`;
+}
+/* the daily challenge (2026-11-17): the tab shows the day's map, the rules, today's fastest and your counted run; after a
+   run the page comes back here with the result and a Share button (the phone's share sheet, else the clipboard) */
+const fmtT = t => t == null ? "-" : Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0");
+let DCRES = (() => { try { const r = JSON.parse(sessionStorage.getItem("dcres") || "null"); return r && Date.now() - r.at < 600000 ? r : null; } catch (e) { return null; } })();
+function dcShareText(r) { return `Daily Map challenge #${r.day}, ${r.map}\n${fmtT(r.t)} (${r.k} kills, ${r.d} ${r.d === 1 ? "death" : "deaths"}, ${r.hs} headshots)\n${r.counted ? `#${r.rank} of ${r.of} today` : "practice run"}\n${location.origin + location.pathname}`; }
+async function loadDc() {
+  const nm = $("name").value.trim(); let r = null; try { r = await fetch("challenge?name=" + encodeURIComponent(nm), { cache: "no-store" }).then(x => x.json()); } catch (e) {}
+  const el = $("lbDc"); if (!r) { el.innerHTML = `<p class="none">The challenge is not available right now</p>`; return; }
+  const res = DCRES && DCRES.day === r.day ? DCRES : null;
+  el.innerHTML = (res ? `<div class="dcres"><span class="eyebrow">${res.done ? "Your run" : "Out of time"}</span>${res.done ? `<b>${fmtT(res.t)}</b><small>${res.k} kills, ${res.d} ${res.d === 1 ? "death" : "deaths"} (+${res.d * r.penalty} s), ${res.hs} headshots. ${res.counted ? `#${res.rank} of ${res.of} today` : `Practice: your counted time is ${fmtT(res.best)}`}</small>
+      <div class="dcrow"><button type="button" class="dcgo" id="dcshare">Share result</button><button type="button" class="dcgo sec" id="dcagain">Again</button></div><small id="dcsharehint"></small>` : `<small>${res.k} of ${r.kills} kills in 10 minutes</small><button type="button" class="dcgo" id="dcagain">Try again</button>`}</div>`
+    : `<span class="eyebrow">Daily challenge #${r.day}</span><span class="dcmap">${esc(r.map)}</span>
+       <p class="dcrule">Alone against four hard bots that keep coming back. ${r.kills} kills as fast as you can; each death adds ${r.penalty} s. Your first finished run today counts.</p>
+       ${r.me ? `<small class="dcrule">Your time today: <b>${fmtT(r.me.t)}</b>. Another run is practice.</small>` : ""}
+       <button type="button" class="dcgo" id="dcgo">${r.me ? "Practice run" : "Start the challenge"}</button>`)
+    + `<span class="eyebrow">Today's fastest${r.players ? `, ${r.players} played` : ""}</span><ol>${(r.top || []).map((t, i) => `<li><i>${i + 1}</i><b>${esc(t.name)}</b><span>${fmtT(t.t)}</span><span>${t.d}<small>D</small></span></li>`).join("") || `<li class="none">Nobody yet. Be the first</li>`}</ol>`;
+  const go = () => { DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {} start({ create: "1", mode: "dc", title: "Daily challenge" }); };
+  if ($("dcgo")) $("dcgo").addEventListener("click", go); if ($("dcagain")) $("dcagain").addEventListener("click", go);
+  if ($("dcshare")) $("dcshare").addEventListener("click", async () => { const text = dcShareText(res);
+    try { if (TOUCH && navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
+    let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {} $("dcsharehint").textContent = ok ? "Copied. Paste it in your group" : text; });
+}
+window.loadDc = loadDc;
+function onDcResult(m) { DCRES = { ...m, t: m.tt, at: Date.now() }; try { sessionStorage.setItem("dcres", JSON.stringify(DCRES)); sessionStorage.removeItem("rejoin"); } catch (e) {}
+  setTimeout(() => { movingTo = "leave"; try { ws && ws.close(); } catch (e) {} location.href = location.pathname; }, 1800); }
+if (DCRES) setTimeout(() => document.querySelector('#lbtabs [data-p="lbDc"]').click(), 0);
 let nextAt = 0, nextName = "";
 /* TEMPORARY, for testing: the arrow moves the public room on to the next map now (server.js MAP_SKIP); the menu then
    reloads so it shows and preloads that map */
@@ -1090,5 +1222,5 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
   if (rj && Date.now() - rj.t < 30000) { team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", frz: params.get("frz") || "", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
-if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
+if (AUTO || DEBUG) window.__g = { lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);

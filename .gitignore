@@ -4,3 +4,5 @@ tools/work-*/
 maps/originals/
 maps/incoming/
 server/boards.json
+server/stats.json
+server/challenge.json

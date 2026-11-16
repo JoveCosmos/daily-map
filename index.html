@@ -135,7 +135,7 @@ body.touch .keys{display:block}
 .priv[hidden],.priv .pane[hidden]{display:none}
 .priv .seg2{display:grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
 .priv .seg2 button{height:34px;border:0;border-radius:8px;background:transparent;color:#8e9b94;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer;transition:background .15s,color .15s}
-.priv .seg2 button.on{background:rgba(126,224,191,.16);color:#7ee0bf}
+#gmode{row-gap:3px}.priv .seg2 button.on{background:rgba(126,224,191,.16);color:#7ee0bf}
 .priv .botn{grid-column:1/-1;display:grid;grid-template-columns:1fr 34px 34px 34px;align-items:center;gap:4px;padding:0 4px;font:600 12.5px ui-sans-serif,system-ui;color:#a9b7b0;transition:opacity .15s}
 .priv .botn button{height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font:700 15px/1 ui-sans-serif,system-ui;cursor:pointer}
 .priv .botn button:hover:not(:disabled){border-color:#7ee0bf;color:#7ee0bf}
@@ -168,6 +168,21 @@ body.touch .keys{display:block}
 .lb figcaption small{font:500 11.5px ui-sans-serif,system-ui;color:#9fb0a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #lbpastw{display:grid;gap:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
 #lbpastw[hidden]{display:none}
+/* the board's tabs (2026-11-17): today's best, lifetime stats for the name in the box */
+.lbtabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:3px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+.lbtabs button{height:28px;border:0;border-radius:7px;background:transparent;color:#8e9b94;font:650 12px ui-sans-serif,system-ui;cursor:pointer}
+.lbtabs button.on{background:rgba(126,224,191,.16);color:#7ee0bf}.lbtabs button:focus-visible{outline:2px solid #7ee0bf;outline-offset:1px}
+.lbp{display:grid;gap:10px}.lbp[hidden]{display:none}
+.stg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.stg div{display:grid;gap:2px;padding:7px 8px;border-radius:9px;background:rgba(255,255,255,.04)}
+.stg b{font:800 16px ui-monospace,monospace;font-variant-numeric:tabular-nums;color:#fff}.stg small{font:600 10px ui-sans-serif,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#8e9b94}
+.stl{display:grid;gap:3px;font:600 12.5px ui-sans-serif,system-ui;color:#cfe0d8}.stl small{color:#8e9b94;font-weight:500}
+.dcmap{font:800 18px ui-sans-serif,system-ui;color:#fff}.dcrule{margin:0;font:500 12.5px/1.45 ui-sans-serif,system-ui;color:#a9b7b0}
+.dcgo{height:40px;border-radius:10px;border:0;background:linear-gradient(180deg,#7ee0bf,#4fcf9f);color:#07130e;font:800 13px ui-sans-serif,system-ui;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.dcgo.sec{background:rgba(255,255,255,.07);color:#dfe7e2;border:1px solid rgba(255,255,255,.14)}.dcgo:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.dcres{display:grid;gap:6px;padding:10px 12px;border-radius:11px;background:rgba(126,224,191,.1);border:1px solid rgba(126,224,191,.3)}
+.dcres b{font:800 26px ui-monospace,monospace;font-variant-numeric:tabular-nums;color:#fff}.dcres small{font:600 12px ui-sans-serif,system-ui;color:#a9b7b0}
+.dcrow{display:grid;grid-template-columns:1fr auto;gap:8px}
+.lbp .none{color:#8e9b94;font:500 13px ui-sans-serif,system-ui}
 @media (max-width:760px),(max-height:520px){.lb{display:none}}
 .share{display:grid;gap:8px}
 .share[hidden]{display:none}
@@ -286,7 +301,14 @@ body.touch #buy{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right))
 #nades .c4{color:var(--amber)}#nades .c4.on{color:#fff}#nades .kit{color:#9cc6ff}
 #tC4{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 30px)}#tBuy{left:calc(124px + env(safe-area-inset-left));top:128px}
 #spec{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);display:flex;gap:12px;align-items:baseline;padding:8px 14px;border-radius:10px;background:var(--hud);border:1px solid var(--line);font:700 15px ui-sans-serif,system-ui;color:#fff;pointer-events:none;white-space:nowrap}
-#spec[hidden]{display:none}#spec small{font:600 11px ui-sans-serif,system-ui;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}#spec span{font:600 12px ui-monospace,monospace;color:#a9b7b0}
+#spec[hidden]{display:none}
+/* damage numbers: placed each frame over the body that was hit */
+#dmgn{position:fixed;inset:0;pointer-events:none;overflow:hidden}#dmgn span{position:absolute;left:0;top:0;font:800 17px ui-sans-serif,system-ui;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);font-variant-numeric:tabular-nums;will-change:transform,opacity}
+#dmgn span.h{color:#ffd24a;font-size:20px}body.kcam #dmgn{visibility:hidden}
+/* the killcam (2026-11-17): its label up top in red, the death card down out of the way, and none of your own HUD */
+body.kcam #spec{top:58px;bottom:auto}body.kcam #spec small{color:#ef5b4b}body.hlcam #spec small{color:#ffd24a}
+body.kcam #kc{bottom:12px;transform:translateX(-50%) scale(.82);transform-origin:50% 100%}
+body.kcam #hp,body.kcam #nades,body.kcam #wname,body.kcam #big,body.kcam #msg{visibility:hidden}#spec small{font:600 11px ui-sans-serif,system-ui;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}#spec span{font:600 12px ui-monospace,monospace;color:#a9b7b0}
 .priv .botn{grid-column:1}.priv .cyc{min-width:0;height:30px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#d7dfda;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer}
 .priv .cyc:hover{border-color:rgba(126,224,191,.5)}.priv .cyc.off{opacity:.35;pointer-events:none}.priv{flex-shrink:0}
 .priv .seg2 button:focus-visible,.priv .cyc:focus-visible{outline:1px solid #7ee0bf}
@@ -339,6 +361,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
 </head>
 <body>
 <div id="hud">
+  <div id="dmgn" aria-hidden="true"></div>
   <div id="hurt"></div>
   <div id="flashw"></div>
   <div id="fade"></div>
@@ -400,6 +423,10 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
           <label class="srow"><span>Volume</span><input type="range" id="setVol" min="0" max="100" step="1"><output id="setVolV"></output></label>
           <div class="srow mouse-only"><span>Crouch key</span><button type="button" class="stog on" id="setCrouch">C</button></div>
           <div class="srow"><span>Invert look</span><button type="button" class="stog" id="setInv" aria-pressed="false">Off</button></div>
+          <div class="srow"><span>Damage numbers</span><button type="button" class="stog" data-set="dmg" aria-pressed="true">On</button></div>
+          <div class="srow"><span>Headshot sound</span><button type="button" class="stog" data-set="dink" aria-pressed="true">On</button></div>
+          <div class="srow"><span>Killcam</span><button type="button" class="stog" data-set="kcam" aria-pressed="true">On</button></div>
+          <div class="srow"><span>Round highlights</span><button type="button" class="stog" data-set="hl" aria-pressed="true">On</button></div>
           <div class="srow"><span>Crosshair</span><div class="sxh" id="setXh"><button type="button" data-c="#5cff8a" style="--c:#5cff8a" aria-label="Green"></button><button type="button" data-c="#ffffff" style="--c:#ffffff" aria-label="White"></button><button type="button" data-c="#00e5ff" style="--c:#00e5ff" aria-label="Cyan"></button><button type="button" data-c="#ffd400" style="--c:#ffd400" aria-label="Yellow"></button><button type="button" data-c="#ff4fd8" style="--c:#ff4fd8" aria-label="Pink"></button></div></div><div class="srow"><span>Weapon finish</span><div class="sfin" id="setFin"><button type="button" data-f="factory" style="--c:#2c2e31" aria-label="Factory" title="Factory"></button><button type="button" data-f="desert" style="--c:#b49a6a" aria-label="Desert" title="Desert"></button><button type="button" data-f="arctic" style="--c:#d9dde0" aria-label="Arctic" title="Arctic"></button><button type="button" data-f="night" style="--c:#141a2a" aria-label="Night" title="Night"></button><button type="button" data-f="forest" style="--c:#4a5a3a" aria-label="Forest" title="Forest"></button><button type="button" data-f="crimson" style="--c:#8a1a1e" aria-label="Crimson" title="Crimson"></button><button type="button" data-f="gold" style="--c:#c9a14a" aria-label="Gold" title="Gold"></button></div></div>
         </div>
         <div class="klist"><span class="row">Move<kbd><b>W</b><b>A</b><b>S</b><b>D</b></kbd></span><span class="row">Jump<kbd><b>Space</b></kbd></span><span class="row">Crouch<kbd><b id="kCrouch">C</b></kbd></span><span class="row">Walk<kbd><b>Shift</b></kbd></span><span class="row">Fire<kbd><b>Click</b></kbd></span><span class="row">Zoom<kbd><b>Right</b></kbd></span><span class="row">Reload<kbd><b>R</b></kbd></span><span class="row">Weapons<kbd><b>1</b><b>2</b><b>3</b><b>Q</b></kbd></span><span class="row">Grenades<kbd><b>4</b></kbd></span><span class="row">Throw, lob<kbd><b>Click</b><b>Right</b></kbd></span><span class="row">Pick up<kbd><b>E</b></kbd></span><span class="row">Scores<kbd><b>Tab</b></kbd></span><span class="row">Respawn<kbd><b>K</b></kbd></span><span class="row">Chat, team chat<kbd><b>Y</b><b>U</b></kbd></span><span class="row">Radio<kbd><b>Z</b></kbd></span><span class="row">Mark a spot<kbd><b>Middle</b></kbd></span><span class="row">Bomb<kbd><b>5</b></kbd></span><span class="row">Buy<kbd><b>B</b></kbd></span></div></div>
@@ -427,14 +454,19 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
     </section>
     <section class="priv" id="priv">
       <div class="tabs" role="tablist"><button type="button" role="tab" class="on" data-tab="mk" aria-selected="true">Create a room</button><button type="button" role="tab" data-tab="jn" aria-selected="false">Join a room</button></div>
-      <div class="pane" id="mk"><div class="seg2 full" id="gmode" role="radiogroup"><button type="button" class="on" data-m="dm" role="radio" aria-checked="true">Deathmatch</button><button type="button" data-m="comp" role="radio" aria-checked="false">Competitive</button></div><div class="seg2" id="bots" role="radiogroup"><button type="button" class="on" data-b="1" role="radio" aria-checked="true">With bots</button><button type="button" data-b="0" role="radio" aria-checked="false">Friends only</button></div><button type="button" class="go2" id="create">Create</button><div class="botn" id="botn"><span>Bots</span><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div><button type="button" class="cyc" id="bdiff" aria-label="Bot difficulty, click to change">Normal</button><div class="botn" id="frz" hidden><span>Freeze time, seconds</span><button type="button" data-d="-1" aria-label="Shorter freeze time">&minus;</button><b id="frzv">5</b><button type="button" data-d="1" aria-label="Longer freeze time">+</button></div></div>
+      <div class="pane" id="mk"><div class="seg2 full" id="gmode" role="radiogroup"><button type="button" class="on" data-m="dm" role="radio" aria-checked="true">Deathmatch</button><button type="button" data-m="comp" role="radio" aria-checked="false">Competitive</button><button type="button" data-m="gg" role="radio" aria-checked="false">Gun Game</button><button type="button" data-m="wing" role="radio" aria-checked="false">Wingman</button></div><div class="seg2" id="bots" role="radiogroup"><button type="button" class="on" data-b="1" role="radio" aria-checked="true">With bots</button><button type="button" data-b="0" role="radio" aria-checked="false">Friends only</button></div><button type="button" class="go2" id="create">Create</button><div class="botn" id="botn"><span>Bots</span><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div><button type="button" class="cyc" id="bdiff" aria-label="Bot difficulty, click to change">Normal</button><div class="botn" id="frz" hidden><span>Freeze time, seconds</span><button type="button" data-d="-1" aria-label="Shorter freeze time">&minus;</button><b id="frzv">5</b><button type="button" data-d="1" aria-label="Longer freeze time">+</button></div></div>
       <div class="pane" id="jn" hidden><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join</button></div>
     </section>
   </main>
   <aside class="lb" id="lb">
-    <span class="eyebrow">Today's best</span>
-    <ol id="lbtop"></ol>
-    <div id="lbpastw" hidden><span class="eyebrow">Earlier</span><div class="past" id="lbpast"></div></div>
+    <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false">Challenge</button></div>
+    <div class="lbp" id="lbToday">
+      <span class="eyebrow">Today's best</span>
+      <ol id="lbtop"></ol>
+      <div id="lbpastw" hidden><span class="eyebrow">Earlier</span><div class="past" id="lbpast"></div></div>
+    </div>
+    <div class="lbp" id="lbStats" hidden></div>
+    <div class="lbp" id="lbDc" hidden></div>
   </aside>
 </div>
 <script type="module" src="./game.js"></script>
