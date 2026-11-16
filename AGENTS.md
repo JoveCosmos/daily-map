@@ -20,9 +20,16 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   halftime, votes) live in `server.js`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
   lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `game.js`: change
   both.
-- **`models.js`** builds the soldiers and guns procedurally (no model files); most guns are a close relative's model
-  with the parts that tell them apart (`VARIANT`). Weapon finishes repaint a gun's body materials (`applyFinish`). **`index.html`** holds the page, the
+- **`models.js`** builds the soldiers and guns procedurally; most guns are a close relative's model with the parts that
+  tell them apart (`VARIANT`). A few guns use a public-domain model instead (`IMPORTED`, files in `models/`, credits in
+  MODELS.md): it is painted in the game's own materials and fitted to the code-built gun's box (muzzle, top, centre),
+  so hands, flash and tracers need no change, and `?codeguns` shows the old one. Weapon finishes repaint a gun's body
+  materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
+  game.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
   menu and all CSS.
+- **Sound** is in game.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
+  Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
+  distance and sends it to the echo; `probeEnv` sets the echo from how enclosed the listener is.
 - **Maps** (`maps/<id>.json`) point to a visual mesh, a phone visual and a collision mesh, plus a scale. The server
   loads every map in its list once; the public room rotates through `maps/rotation.json`.
 
@@ -67,6 +74,11 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   in one place.
 - **Grenades can leave the map.** A steep throw clears low walls; the server logs it and drops the grenade. Tests that
   throw should aim into the map.
+- **A rigged model can draw at a size it does not measure.** A skinned mesh is measured in its bind pose but drawn
+  through its bones; the imported AK came out far too big in the view. Imported guns are baked to plain meshes
+  (`bakeSkins`), and a gun model returns inside a holder group because callers set its scale.
+- **A sound recorded in a room carries the room.** Cut foley tight and dry (high-pass, the boom cut, the tail gated):
+  the game adds the echo of where the player stands, and a second one baked into the clip sounds like a basement.
 - **Headless test browsers join the game.** A test that is killed by a timeout can leave its browser running and
   connected as a phantom player. Close test browsers explicitly.
 
