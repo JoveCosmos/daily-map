@@ -155,11 +155,11 @@ addEventListener("keydown", e => { if (e.target && e.target.id === "name") retur
   if (e.code === "KeyF" && me.alive) inspectT = 2.2; if ((e.code === "F1" || e.code === "F2") && VOTEON) { e.preventDefault(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "vote", y: e.code === "F1" })); VOTEON = false; $("vote").innerHTML += `<p>You voted ${e.code === "F1" ? "yes" : "no"}</p>`; return; }
   if (e.code === "F1") { e.preventDefault(); DEBUG = !DEBUG; return; } if (e.code === "Tab") e.preventDefault(); keys[e.code] = true; if (e.code === "KeyR") reloadQ = true; if (e.code === "Digit1") slotQ = "p"; if (e.code === "Digit2") slotQ = "s"; if (e.code === "Digit3") slotQ = "k"; if (e.code === "Digit4") slotQ = "g"; if (e.code === "KeyQ") slotQ = "q"; if (e.code === "KeyK" && !e.repeat) unstuck(); if (["Space", "ControlLeft"].includes(e.code)) e.preventDefault(); });
 addEventListener("keyup", e => { keys[e.code] = false; });
-addEventListener("mousedown", e => { if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) { mouseDown = true; dryFire(); } if (e.button === 2) rmb = true; });
+addEventListener("mousedown", e => { if (BUY.free) { if (e.target === renderer.domElement) buyMenu(false); return; } if (!(locked || AUTO)) return; if (e.button === 1) { e.preventDefault(); sendPing(); return; } if (e.button === 0 && SPEC.id) { specNext(); return; } if (e.button === 0) { mouseDown = true; dryFire(); } if (e.button === 2) rmb = true; });
 addEventListener("mouseup", e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rmb = false; });
 addEventListener("wheel", e => { if (locked) slotQ = slotQ || "q"; }, { passive: true });
 let swayX = 0, swayY = 0;
-addEventListener("mousemove", e => { if (!locked || !connected) return; swayX = clamp(swayX + e.movementX * .00025, -.03, .03); swayY = clamp(swayY + e.movementY * .00025, -.03, .03); const k = SET.sens * .022 * DEG * zoomMul(); me.yaw -= e.movementX * k; me.pitch = clamp(me.pitch - (SET.inv ? -1 : 1) * e.movementY * k, -89 * DEG, 89 * DEG); });
+addEventListener("mousemove", e => { if (!locked || !connected || BUY.free) return; swayX = clamp(swayX + e.movementX * .00025, -.03, .03); swayY = clamp(swayY + e.movementY * .00025, -.03, .03); const k = SET.sens * .022 * DEG * zoomMul(); me.yaw -= e.movementX * k; me.pitch = clamp(me.pitch - (SET.inv ? -1 : 1) * e.movementY * k, -89 * DEG, 89 * DEG); });
 /* player settings (2026-11-01, group feedback: "need settings like mouse sens, fov"): kept per browser.
    Sensitivity is on CS's own scale (0.022 degrees per mouse count x sens), so a CS player types their number;
    5.7 matches the original feel. FOV is vertical degrees (74 = CS's 90 on a 4:3 screen, seen at 16:9). */
@@ -234,7 +234,7 @@ if (TOUCH) {
 }
 /* "locked" = playing with input captured: the mouse locked on a computer, the touch controls up on a phone */
 function setLocked(on) { $("play").textContent = connected ? "Resume" : "Play"; $("priv").hidden = connected; $("leave").hidden = !connected; $("unstuck").hidden = !connected; $("share").hidden = !(connected && currentRoom !== "DAILY"); if (!on) { for (const k in keys) keys[k] = false; rmb = false; mouseDown = false; for (const b of document.querySelectorAll(".tb.on,.tb.dn")) b.classList.remove("on", "dn"); } locked = on; if (locked && connected) $("load").textContent = ""; $("start").style.display = (locked && connected) || AUTO ? "none" : ""; if (!locked) mouseDown = false;  document.body.classList.toggle("playing", locked && connected); }
-document.addEventListener("pointerlockchange", () => { if (!TOUCH) setLocked(document.pointerLockElement === renderer.domElement); });
+document.addEventListener("pointerlockchange", () => { if (TOUCH) return; const on = document.pointerLockElement === renderer.domElement; if (!on && BUY.free && BUY.open) return; setLocked(on); });   // the buy menu frees the mouse without pausing
 
 /* ── sound ───────────────────────────────────────────────────────────────────── */
 let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new AudioContext(); OUT = AC.createBiquadFilter(); OUT.type = "lowpass"; OUT.frequency.value = 20000; MG = AC.createGain(); MG.gain.value = SET.vol / 100; OUT.connect(MG).connect(AC.destination); VERB = AC.createGain(); for (const k of ["open", "room"]) { const c = AC.createConvolver(); c.buffer = echoTail(k); ENV[k] = AC.createGain(); ENV[k].gain.value = k === "open" ? .55 : 0; VERB.connect(ENV[k]).connect(c).connect(OUT); } loadClips(); } catch (e) {} if (AC && AC.state === "suspended") AC.resume(); }
@@ -460,12 +460,20 @@ const PRICE = { glock: [200, 1], usp: [200, 0], p250: [300], fiveseven: [500, 0]
                 vest: [650], vesthelm: [1000], he: [300], flash: [200], smoke: [300], molotov: [400, 1], incendiary: [600, 0], decoy: [50], kit: [400, 0], zeus: [200] };   // same as server.js
 const BUYCATS = [["Pistols", ["usp", "glock", "p250", "fiveseven", "tec9", "cz75", "deagle"]], ["SMGs", ["mp9", "mac10", "mp7", "ump", "p90"]], ["Heavy", ["nova", "xm1014", "negev"]],
                  ["Rifles", ["famas", "galil", "m4", "m4a1s", "ak", "sg553", "aug", "ssg08", "awp"]], ["Gear", ["vest", "vesthelm", "kit", "zeus"]], ["Grenades", ["flash", "smoke", "he", "molotov", "decoy"]]];
-const BUY = { open: false, cat: -1 };
+const BUY = { open: false, cat: -1, free: false };
 let SITES_C = [], lastMo = null, moFlash = 0, lastBeep = 0;
 const itemName = it => ({ vest: "Kevlar", vesthelm: "Kevlar + helmet", kit: "Defuse kit", molotov: myTeam === 0 ? "Incendiary" : "Molotov" })[it] || (WEAPONS[it] || {}).name || it;
 function itemPrice(it) { const P = PRICE[it === "molotov" && myTeam === 0 ? "incendiary" : it]; if (!P) return null;
   if (P[1] != null && P[1] !== myTeam) return null; if (it === "vesthelm" && me.armor >= 100 && !me.helmet) return 350; return P[0]; }
-function buyMenu(on) { BUY.open = on && GM && GM.m === "comp"; BUY.cat = -1; drawBuy(); }
+/* on a computer the menu frees the mouse, as CS does: the cursor shows, a click buys, the view holds still, and closing
+   it captures the mouse again (2026-11-17: it was keyboard only). Moving with the keys still works while it is open. */
+function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && GM.m === "comp"; BUY.cat = -1; drawBuy();
+  if (TOUCH || was === BUY.open) return;
+  if (BUY.open) { BUY.free = true; mouseDown = false; rmb = false; if (document.pointerLockElement) document.exitPointerLock(); }
+  else if (BUY.free) { BUY.free = false; if (locked && connected && !document.pointerLockElement) relock(); } }
+/* capture the mouse again after the menu; if the browser refuses (no click or key behind it), the pause menu shows, as on Esc */
+function relock() { let p; try { p = renderer.domElement.requestPointerLock(); } catch (e) { return setLocked(false); }
+  if (p && p.catch) p.catch(() => { if (!document.pointerLockElement) setLocked(false); }); }
 function drawBuy() {
   const el = $("buy"); el.hidden = !BUY.open; if (!BUY.open) return;
   const money = me.mo || 0, row = (n, label, price, ok) => `<button type="button" data-n="${n}" class="${ok ? "" : "no"}"><kbd>${n}</kbd><span>${esc(label)}</span>${price != null ? `<b>$${price}</b>` : ""}</button>`;
@@ -1020,7 +1028,7 @@ let gameMode = "dm", botDiff = "normal";
 const DIFFS = ["easy", "normal", "hard", "expert"];   // one button that steps through them, as compact as the menu needs
 $("bdiff").addEventListener("click", () => { botDiff = DIFFS[(DIFFS.indexOf(botDiff) + 1) % DIFFS.length]; $("bdiff").textContent = botDiff[0].toUpperCase() + botDiff.slice(1); });   // Deathmatch or Competitive, for a room you create (2026-11-14)
 $("gmode").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; gameMode = b.dataset.m;
-  for (const x of $("gmode").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } });
+  for (const x of $("gmode").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } $("frz").hidden = gameMode !== "comp"; });
 $("bots").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; withBots = b.dataset.b === "1"; $("botn").classList.toggle("off", !withBots); $("bdiff").classList.toggle("off", !withBots);
   for (const x of $("bots").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } });
 document.querySelector(".priv .tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
@@ -1028,6 +1036,9 @@ document.querySelector(".priv .tabs").addEventListener("click", ev => { const b 
   if (b.dataset.tab === "jn") $("code").focus(); });
 let botN = 3; const setBots = n => { botN = Math.max(1, Math.min(5, n)); $("botv").textContent = botN; const [dn, up] = $("botn").querySelectorAll("button"); dn.disabled = botN <= 1; up.disabled = botN >= 5; };
 $("botn").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) setBots(botN + +b.dataset.d); }); setBots(3);
+/* Competitive's freeze time, the creator's pick (2026-11-17): 5 s unless changed; the server takes only these values */
+const FRZ = [0, 3, 5, 8, 10, 15]; let frzS = 5; const setFrz = v => { frzS = v; $("frzv").textContent = v; const [dn, up] = $("frz").querySelectorAll("button"); dn.disabled = v <= FRZ[0]; up.disabled = v >= FRZ[FRZ.length - 1]; };
+$("frz").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) setFrz(FRZ[Math.max(0, Math.min(FRZ.length - 1, FRZ.indexOf(frzS) + +b.dataset.d))]); }); setFrz(5);
 const showJoin = () => document.querySelector('.priv .tabs [data-tab="jn"]').click();
 /* today's map: its picture behind the menu, its name, the next one and when */
 const span = t => t >= 3600 ? Math.floor(t / 3600) + " h " + Math.floor(t % 3600 / 60) + " min" : Math.max(1, Math.floor(t / 60)) + " min";
@@ -1073,11 +1084,11 @@ const invite = () => location.origin + location.pathname + "?room=" + currentRoo
 $("copylink").addEventListener("click", async () => { let ok = false; try { await navigator.clipboard.writeText(invite()); ok = true; } catch (e) {}
   $("sharehint").textContent = ok ? "Copied. Send it to your friends" : invite(); });
 if (room !== "DAILY" && !AUTO) { showJoin(); $("code").value = room; $("load").textContent = "Invited to room " + room + ". Press Play to join"; }
-$("create").addEventListener("click", () => start({ create: "1", mode: gameMode, diff: botDiff, bots: withBots ? "1" : "0", bpt: botN, title: ($("name").value.trim() || "player") + "'s room" }));
+$("create").addEventListener("click", () => start({ create: "1", mode: gameMode, frz: frzS, diff: botDiff, bots: withBots ? "1" : "0", bpt: botN, title: ($("name").value.trim() || "player") + "'s room" }));
 $("joincode").addEventListener("click", () => { const c = $("code").value.trim().toUpperCase(); if (c.length !== 4) { $("load").textContent = "A room code is 4 letters"; return; } start({ room: c }); });
 for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter") (id === "code" ? $("joincode") : $("play")).click(); });
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
   if (rj && Date.now() - rj.t < 30000) { team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
-if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
+if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", frz: params.get("frz") || "", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
 if (AUTO || DEBUG) window.__g = { corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);

@@ -40,15 +40,17 @@ const nextDaily = () => { const now = Date.now() / 1000, i = (Math.floor(now / D
    no respawn inside a round, eliminate or run the clock; first to 8 rounds, at most 15) - both restart when over */
 const ENV = k => process.env[k] ? +process.env[k] : null;   // test only: shorter times
 const MODES = { dm: { name: "Deathmatch", time: ENV("DM_TIME") ?? 600 }, rounds: { name: "Rounds", roundTime: ENV("ROUND_TIME") ?? 115, freeze: 3, toWin: ENV("TO_WIN") ?? 8, maxRounds: 15 },
-  /* CS's competitive short match (2026-11-14): first to 9 of 16, sides swap after 8, 15 s freeze, 1:55 rounds, the bomb */
-  comp: { name: "Competitive", roundTime: ENV("ROUND_TIME") ?? 115, freeze: ENV("FREEZE") ?? 15, toWin: ENV("TO_WIN") ?? 9, maxRounds: 16, half: ENV("HALF") ?? 8, endTime: 5,
+  /* CS's competitive short match (2026-11-14): first to 9 of 16, sides swap after 8, 1:55 rounds, the bomb; freeze time 5 s
+   (CS has 15, which felt long here, 2026-11-17), and the room's creator can set it (FREEZES) */
+  comp: { name: "Competitive", roundTime: ENV("ROUND_TIME") ?? 115, freeze: ENV("FREEZE") ?? 5, toWin: ENV("TO_WIN") ?? 9, maxRounds: 16, half: ENV("HALF") ?? 8, endTime: 5,
           bombTime: ENV("BOMB_TIME") ?? 40, buyTime: 20, plant: 3.2, defuse: 10, kitDefuse: 5, startMoney: ENV("START_MONEY") ?? 800, maxMoney: 16000 } };
 /* bot difficulty (2026-11-14), as CS offers it: how fast a bot reacts, how far its aim strays (x), how often it goes for the
    head, how wide it notices things (degrees either side), how readily it uses grenades (x) */
 const FINISHES = ["factory", "desert", "arctic", "night", "forest", "crimson", "gold"];   // weapon finishes, as models.js (cosmetic)
 const DIFF = { easy: { react: [.75, .45], err: 2.8, head: .05, fov: 60, nade: .35 }, normal: { react: [.35, .3], err: 1, head: .2, fov: 80, nade: 1 },
                hard: { react: [.22, .15], err: .62, head: .33, fov: 90, nade: 1.3 }, expert: { react: [.14, .08], err: .4, head: .48, fov: 100, nade: 1.6 } };
-function createRoom(code, title, mode = "dm", botCfg = null, FF = false, mapId = "standin", diff = "normal") {   // FF: friendly fire
+const FREEZES = [0, 3, 5, 8, 10, 15];   // the freeze times a room's creator can pick, seconds
+function createRoom(code, title, mode = "dm", botCfg = null, FF = false, mapId = "standin", diff = "normal", freeze = null) {   // FF: friendly fire
   const BD = DIFF[diff] || DIFF.normal;
   const MAP_ID = WORLDS[mapId] ? mapId : "standin", W = WORLDS[MAP_ID], SLOT = code === "DAILY" ? slotNow() : null;   // SLOT: this turn of the rotation, for the board   // botCfg: [CT, T] fixed counts, or null to fill empty slots to PER_TEAM
   const MODE = MODES[mode] ? mode : "dm", G = { ph: "live", until: 0, round: 0, sc: [0, 0], msg: "", winner: -1, tSite: 0, buyUntil: 0 }, ROUNDS = MODE !== "dm", COMP = MODE === "comp", CM = MODES.comp;
@@ -655,7 +657,7 @@ function endMatch() {
   G.msg = w < 0 ? "Draw" : TEAMNAME[w] + " wins"; events.push({ k: "match", w, sc: G.sc.slice() }); roster();
 }
 function startRound() {
-  G.round++; G.ph = "freeze"; G.until = time + MODES[MODE].freeze; G.msg = "";
+  G.round++; G.ph = "freeze"; G.until = time + (freeze ?? MODES[MODE].freeze); G.msg = "";
   const half = COMP && G.round === CM.half + 1;
   if (COMP && (G.round === 1 || half)) { for (const e of ents.values()) { e.money = CM.startMoney; e.kit = false; } lossStreak[0] = lossStreak[1] = 0; }
   if (half) { for (const e of ents.values()) e.team = 1 - e.team; G.sc = [G.sc[1], G.sc[0]]; events.push({ k: "half" }); }   // sides swap, the score goes with the players
@@ -888,7 +890,7 @@ wss.on("connection", (ws0, req) => {
     if (rooms.size >= MAX_ROOMS) { ws0.send(JSON.stringify({ t: "x", why: "Too many rooms open, join one of them" })); ws0.close(1013, "too many rooms"); return; }
     const code = newCode(), title = (q.get("title") || name + "'s room").replace(/[^\w .'-]/g, "").slice(0, 24) || code;
     const bpt = parseInt(q.get("bpt"), 10), bots = process.env.TEST_BOTS ? process.env.TEST_BOTS.split(",").map(Number) : q.get("bots") === "0" ? [0, 0] : bpt >= 1 && bpt <= 5 ? [bpt, bpt] : null;   // TEST_BOTS "ct,t": test only   // a private room: today's map, no bots or 1-5 a side
-    room = createRoom(code, title, q.get("mode") === "comp" ? "comp" : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal"); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
+    room = createRoom(code, title, q.get("mode") === "comp" ? "comp" : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal", q.get("frz") && FREEZES.includes(+q.get("frz")) ? +q.get("frz") : null); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
   } else room = rooms.get((q.get("room") || "DAILY").toUpperCase());
   if (!room) { ws0.send(JSON.stringify({ t: "x", why: "No room with that code" })); ws0.close(4004, "no such room"); return; }
   room.join(ws, ws0, name, team, q.get("fin"));
