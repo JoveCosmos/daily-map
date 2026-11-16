@@ -34,7 +34,7 @@ for (const id of MAPLIST) {
   log(`map ${id}: ${w.nodes.length} walkable points, spawns ${w.spawn[0].length}/${w.spawn[1].length}, longest walk ${w.span.toFixed(0)} m (${Date.now() - t0} ms)`);
 }
 
-const nextDaily = () => { const now = Date.now() / 1000, i = (Math.floor(now / DAILY_PERIOD) + 1) % DAILY_LIST.length; return { map: MAPS[DAILY_LIST[i]].name, in: Math.round(DAILY_PERIOD - now % DAILY_PERIOD) }; };
+const nextDaily = () => { const now = Date.now() / 1000, i = (Math.floor(now / DAILY_PERIOD) + 1 + dailySkip) % DAILY_LIST.length; return { map: MAPS[DAILY_LIST[i]].name, in: Math.round(DAILY_PERIOD - now % DAILY_PERIOD) }; };
 /* ── a room: its own players, bots, pickups and clock; every room shares the one map and its routes ─────────── */
 /* game modes: deathmatch (a fixed time, respawning, team kills decide) and rounds (CS competitive: a fixed round time,
    no respawn inside a round, eliminate or run the clock; first to 8 rounds, at most 15) - both restart when over */
@@ -842,12 +842,17 @@ setInterval(() => { if (!boardsDirty) return; boardsDirty = false; for (const k 
 const boardTop = (slot, n) => { const b = boards[slot]; return b ? Object.entries(b.s).sort((x, y) => y[1][0] - x[1][0] || x[1][1] - y[1][1]).slice(0, n).map(([name, [k, d]]) => ({ name, k, d })) : []; };
 const boardPast = (slot, n) => Object.keys(boards).map(Number).filter(k => k < slot && boards[k].map && MAPS[boards[k].map]).sort((a, b) => b - a).slice(0, n)
   .map(k => ({ map: MAPS[boards[k].map].name.replace(/, HY-World$/, ""), preview: "maps/" + boards[k].map + "-preview.jpg", best: boardTop(k, 1).find(b => b.k > 0) || null, players: Object.keys(boards[k].s).length }));
-const dailyIndex = () => Math.floor(Date.now() / 1000 / DAILY_PERIOD) % DAILY_LIST.length;
+/* TEMPORARY, for testing (2026-11-16): anyone can move the public room on to the next map from the menu (the arrow by
+   "Next: ..."). It shifts the rotation by one and switches at once; one switch per 5 s for everyone. MAP_SKIP=0 turns
+   it off. The board's turns still follow the clock, so a turn can hold two maps while this is on */
+const MAP_SKIP = process.env.MAP_SKIP !== "0"; let dailySkip = 0, skipAt = 0;
+const dailyIndex = () => (Math.floor(Date.now() / 1000 / DAILY_PERIOD) + dailySkip) % DAILY_LIST.length;
 const dailyTitle = id => MAPS[id].name.replace(/, HY-World$/, "");
 let dailyAt = dailyIndex();
 rooms.set("DAILY", createRoom("DAILY", dailyTitle(DAILY_LIST[dailyAt]), "dm", null, false, DAILY_LIST[dailyAt]));
-setInterval(() => { const i = dailyIndex(); if (i === dailyAt) return; dailyAt = i; const id = DAILY_LIST[i], old = rooms.get("DAILY");
-  rooms.set("DAILY", createRoom("DAILY", dailyTitle(id), "dm", null, false, id)); if (old) old.moveAll(MAPS[id].name); log(`daily map is now ${id}`); }, 5000);
+function switchDaily() { const i = dailyIndex(); if (i === dailyAt) return; dailyAt = i; const id = DAILY_LIST[i], old = rooms.get("DAILY");
+  rooms.set("DAILY", createRoom("DAILY", dailyTitle(id), "dm", null, false, id)); if (old) old.moveAll(MAPS[id].name); log(`daily map is now ${id}`); }
+setInterval(switchDaily, 5000);
 
 /* ── files and the socket on one port ────────────────────────────────────────── */
 const GZ = new Map();
@@ -856,7 +861,9 @@ const server = http.createServer((req, res) => {
   let p; try { p = decodeURIComponent((req.url || "/").split("?")[0]); } catch { res.writeHead(400); res.end("bad request"); return; } if (p === "/") p = "/index.html";
   // what a player's page reports about itself (phones); small, logged one line each, rate-limited
   if (p === "/diag" && req.method === "POST") { let b = ""; req.on("data", d => { if (b.length < 4000) b += d; }); req.on("end", () => { if ((diagN = diagN + 1) < 600) log("diag " + b.replace(/[\r\n]/g, " ").slice(0, 1500)); res.writeHead(204); res.end(); }); return; }
-  if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
+  if (p === "/skipmap" && req.method === "POST") { const ok = MAP_SKIP && Date.now() - skipAt > 5000; if (ok) { skipAt = Date.now(); dailySkip++; switchDaily(); log("map skipped by a player"); }
+    res.writeHead(ok ? 200 : 429, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ ok })); return; }
+  if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), skip: MAP_SKIP, preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
   const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3|models\/[\w.-]+\.glb)$/.test(p) && !p.includes("..");
   const f = path.join(ROOT, p);
   if (!ok || !f.startsWith(ROOT + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404); res.end("not found"); return; }

@@ -268,17 +268,17 @@ export const sleeveMaterial = team => kit(team).cloth;
 const ARMS = { scene: null };
 export async function loadArms(loader) { try { ARMS.scene = (await loader.loadAsync("models/arms.glb")).scene; } catch (e) {} return !!ARMS.scene; }
 const HANDISH = /hand|palm|f_|thumb/;
-export function makeArms(sleeve, glove) {
+export function makeArms(sleeve) {
   if (!ARMS.scene) return null;
   const root = ARMS.scene; let mesh = null; root.traverse(o => { if (o.isSkinnedMesh) mesh = o; });
   if (!mesh) return null;
-  // dress: sleeve or glove for each triangle, by the bone carrying most of its weight
-  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, idx = g.index.array, bones = mesh.skeleton.bones;
-  const top = v => { let b = 0, w = -1; for (let k = 0; k < 4; k++) { const x = sw.getComponent(v, k); if (x > w) { w = x; b = si.getComponent(v, k); } } return b; };
-  const a = [], h = [];
-  for (let t = 0; t < idx.length; t += 3) { let n = 0; for (let k = 0; k < 3; k++) if (HANDISH.test(bones[top(idx[t + k])].name)) n++; (n >= 2 ? h : a).push(idx[t], idx[t + 1], idx[t + 2]); }
-  g.setIndex([...a, ...h]); g.clearGroups(); g.addGroup(0, a.length, 0); g.addGroup(a.length, h.length, 1);
-  mesh.material = [sleeve, glove]; mesh.frustumCulled = false; mesh.castShadow = false;
+  // dress: the team's sleeve, darkened to a glove where the hand bones carry the skin. A colour per vertex, so the cuff
+  // blends across the wrist (whole triangles to one material or the other left a saw-tooth edge, 2026-11-16)
+  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = mesh.skeleton.bones, n = si.count, col = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
+    col.fill(1 - .89 * THREE.MathUtils.smoothstep(hw, .35, .75), v * 3, v * 3 + 3); }   // 1 on the sleeve, .11 (a dark glove) on the hand
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.clearGroups();
+  sleeve.vertexColors = true; sleeve.needsUpdate = true; mesh.material = sleeve; mesh.frustumCulled = false; mesh.castShadow = false;
   const B = n => bones.find(b => b.name === n.replace(/\./g, ""));
   const side = k => ({ up: B("upper_arm." + k), fore: B("forearm." + k), end: B("forearm." + k + "_end"), hand: B("hand." + k + ".control"),
     fingers: ["index", "middle", "ring", "pinky"].flatMap(f => [1, 2, 3].map(i => B(`f_${f}.0${i}.${k}`))).filter(Boolean), thumb: [1, 2, 3].map(i => B(`thumb.0${i}.${k}`)).filter(Boolean) });

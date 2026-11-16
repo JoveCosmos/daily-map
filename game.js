@@ -672,16 +672,32 @@ function rebuildViews() { for (const w of WIDS) { const was = VIEW[w].visible; g
    its size .42 m ahead, and arms of the same scale only reach it from there (the usual viewmodel trick) */
 const ARMSET = { scale: .72, at: new THREE.Vector3(.06, -.36, -.33), yaw: .35, right: [.03, -.07, .06],
   rifle: { fingers: [1, .25, 0], palm: [0, 1, 0], at: hold => [-.045, -.045, -hold] }, pistol: { fingers: [.3, -.3, -1], palm: [1, 0, 0], at: () => [-.04, -.08, .03] } };
+/* reload keyframes for the left hand, [time 0..1 of the reload, "home" or { at, fingers, palm }] in the gun's space: a
+   rifle's hand goes to the magazine, pulls it out of sight, brings one up, seats it, works the charging handle, goes
+   back; a pistol's support hand drops, brings a magazine to the grip, racks the slide; a shotgun's thumbs a shell in */
+{ const mag = { at: [-.03, -.13, -.13], fingers: [.2, 1, -.3], palm: [1, 0, 0] }, low = { at: [-.08, -.5, -.02], fingers: [.2, 1, 0], palm: [1, 0, 0] };
+  ARMSET.rifleReload = [[0, "home"], [.14, mag], [.3, low], [.48, low], [.62, mag], [.72, mag], [.82, { at: [.05, .07, .04], fingers: [-1, 0, -.2], palm: [-1, 0, 0] }], [.94, "home"], [1, "home"]];
+  ARMSET.pistolReload = [[0, "home"], [.15, { at: [-.06, -.45, .06], fingers: [0, 1, 0], palm: [1, 0, 0] }], [.45, { at: [-.04, -.3, .05], fingers: [0, 1, 0], palm: [1, 0, 0] }],
+    [.6, { at: [-.02, -.15, .03], fingers: [0, 1, -.2], palm: [1, 0, 0] }], [.76, { at: [-.03, .05, .09], fingers: [0, -.3, -1], palm: [1, 0, 0] }], [.86, { at: [-.03, .05, .02], fingers: [0, -.3, -1], palm: [1, 0, 0] }], [1, "home"]];
+  ARMSET.shells = [[0, "home"], [.35, { at: [-.03, -.08, -.08], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [.6, { at: [-.01, -.05, -.02], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [1, "home"]]; }
 if (!params.has("codeguns")) loadGunModels(gltf()).then(got => { if (got.length) rebuildViews(); });
-loadArms(gltf()).then(ok => { if (!ok) return; ARMS = makeArms(sleeve, glove); if (!ARMS) return;
+loadArms(gltf()).then(ok => { if (!ok) return; ARMS = makeArms(sleeve); if (!ARMS) return;
   ARMS.root.position.copy(ARMSET.at); ARMS.root.rotation.set(0, Math.PI + ARMSET.yaw, 0); ARMS.root.scale.setScalar(ARMSET.scale); ARMS.root.visible = false; camera.add(ARMS.root); rebuildViews(); });
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _cq = new THREE.Quaternion();
 function poseArms(w) {
   const vm = VIEW[w]; ARMS.root.visible = gun.visible && !!vm && vm.visible; if (!ARMS.root.visible) return;
   vm.updateWorldMatrix(true, false); vm.getWorldQuaternion(_q); camera.getWorldQuaternion(_cq);
   const gd = a => new THREE.Vector3(...a).applyQuaternion(_q), cd = a => new THREE.Vector3(...a).applyQuaternion(_cq), hold = HOLD[w] && HOLD[w][1];
-  const kind = hold == null ? null : hold < .06 ? ARMSET.pistol : ARMSET.rifle;
-  const left = kind ? { at: vm.localToWorld(_v.set(...kind.at(hold)).clone()), fingers: gd(kind.fingers), palm: gd(kind.palm), pole: cd([-1, -1, .2]) }
+  const kind = hold == null ? null : hold < .06 ? ARMSET.pistol : ARMSET.rifle, W0 = WEAPONS[w] || {};
+  let lp = kind && kind.at(hold), lf = kind && kind.fingers, ln = kind && kind.palm;
+  // a reload (2026-11-16): the left hand works the gun along keyframes over the gun's own reload time
+  if (kind && me.reloadAt && me.w === w) { const r = W0.shell || W0.reload || 2, p = W0.shell ? 1 - ((me.reloadAt - me.clock) / r % 1 + 1) % 1 : clamp(1 - (me.reloadAt - me.clock) / r, 0, 1);
+    const keys = W0.shell ? ARMSET.shells : kind === ARMSET.pistol ? ARMSET.pistolReload : ARMSET.rifleReload, home = { at: lp, fingers: lf, palm: ln };
+    let i = 0; while (i < keys.length - 1 && keys[i + 1][0] <= p) i++;
+    const A = keys[i], B = keys[Math.min(i + 1, keys.length - 1)], k = B[0] > A[0] ? THREE.MathUtils.smoothstep(p, A[0], B[0]) : 1;
+    const pick = (K, f) => K[1] === "home" ? home[f] : K[1][f], mix = f => pick(A, f).map((x, j) => x + (pick(B, f)[j] - x) * k);
+    lp = mix("at"); lf = mix("fingers"); ln = mix("palm"); }
+  const left = kind ? { at: vm.localToWorld(_v.set(...lp).clone()), fingers: gd(lf), palm: gd(ln), pole: cd([-1, -1, .2]) }
     : { at: camera.localToWorld(new THREE.Vector3(-.3, -.75, -.25)), fingers: cd([0, -1, 0]), palm: cd([1, 0, 0]), pole: cd([-1, -1, 0]) };   // one-handed: the left arm drops out of sight
   ARMS.pose({ at: vm.localToWorld(_v.set(...ARMSET.right).clone()), fingers: gd([-.25, -.15, -1]), palm: gd([-1, 0, 0]), pole: cd([1, -1, .2]) }, left,
     { curl: (WEAPONS[w] || {}).melee ? 1.05 : .9, thumb: .4, curlL: .8, thumbL: .3 });
@@ -1019,7 +1035,7 @@ async function loadToday() {
   let r = null; try { r = (await fetch("rooms", { cache: "no-store" }).then(x => x.json()))[0]; } catch (e) {}
   if (!r) return;
   if (r.map) getMap(r.map);
-  $("mapname").textContent = r.title; if (r.next) { nextName = r.next.map.replace(/, HY-World$/, ""); nextAt = Date.now() + r.next.in * 1000; tickNext(); }
+  $("skipmap").hidden = !r.skip; $("mapname").textContent = r.title; if (r.next) { nextName = r.next.map.replace(/, HY-World$/, ""); nextAt = Date.now() + r.next.in * 1000; tickNext(); }
   // today's best on this map, and the last maps with whoever topped them
   const rows = (r.board || []).map((b, i) => `<li><i>${i + 1}</i><b>${esc(b.name)}</b><span>${b.k}<small>K</small></span><span>${b.d}<small>D</small></span></li>`).join("");
   $("lbtop").innerHTML = rows || `<li class="none">No kills yet</li>`;
@@ -1029,6 +1045,11 @@ async function loadToday() {
   const bg = $("bg"), url = r.preview; if (bg.dataset.src !== url) { bg.dataset.src = url; const im = new Image(); im.onload = () => { bg.style.backgroundImage = `url(${url})`; requestAnimationFrame(() => bg.classList.add("in")); }; im.src = url; }
 }
 let nextAt = 0, nextName = "";
+/* TEMPORARY, for testing: the arrow moves the public room on to the next map now (server.js MAP_SKIP); the menu then
+   reloads so it shows and preloads that map */
+$("skipmap").addEventListener("click", async () => { const b = $("skipmap"); b.disabled = true;
+  try { const r = await fetch("skipmap", { method: "POST" }).then(x => x.json()); if (r.ok) { location.reload(); return; } } catch (e) {}
+  setTimeout(() => { b.disabled = false; }, 2000); });
 /* the countdown to the next world ticks every second */
 function tickNext() { if (!nextAt) return; const t = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
   $("nextmap").textContent = "Next: " + nextName + " in " + (t >= 3600 ? span(t) : Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0")); }

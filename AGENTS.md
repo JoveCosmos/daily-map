@@ -27,6 +27,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
   game.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
   menu and all CSS.
+- **The map switch is temporary.** An arrow by the menu's "Next:" moves the public room on now (`/skipmap`,
+  `MAP_SKIP` in server.js, on by default for testing, `MAP_SKIP=0` turns it off); remove it when testing is done.
 - **Sound** is in game.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
   Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
   distance and sends it to the echo; `probeEnv` sets the echo from how enclosed the listener is.
