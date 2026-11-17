@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex">
 <title>Daily Map PoC</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%22-2%20-2%2028%2028%22%3E%3Crect%20x%3D%22-2%22%20y%3D%22-2%22%20width%3D%2228%22%20height%3D%2228%22%20rx%3D%226%22%20fill%3D%22%230c1113%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%227.4%22%20fill%3D%22%2316201f%22/%3E%3CclipPath%20id%3D%22CL%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%226.6%22/%3E%3C/clipPath%3E%3Cg%20clip-path%3D%22url%28%23CL%29%22%20fill%3D%22none%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%22.55%22%20stroke-width%3D%221%22%3E%3Cpath%20d%3D%22M3%209.5c3-2.2%205.5%201.2%208.5-.6s5.5-2.4%209.5.3%22/%3E%3Cpath%20d%3D%22M3%2014.6c3.4-1.8%205.6%201.4%209-.4s5.2-2%209%20.6%22/%3E%3C/g%3E%3Cpath%20d%3D%22M3.66%209.92A8.6%208.6%200%200%201%209.92%203.66M9.92%2020.34A8.6%208.6%200%200%201%203.66%2014.08%22%20fill%3D%22none%22%20stroke%3D%22%234f86d9%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M14.08%203.66A8.6%208.6%200%200%201%2020.34%209.92M20.34%2014.08A8.6%208.6%200%200%201%2014.08%2020.34%22%20fill%3D%22none%22%20stroke%3D%22%23e0a14a%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M12%20.8v3.4M12%2019.8v3.4M.8%2012h3.4M19.8%2012h3.4%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.7%22%20fill%3D%22%23ffffff%22/%3E%3C/svg%3E">
 <style>
 :root{--ink:#eef2ee;--dim:#9fb0a6;--hud:rgba(10,14,12,.55);--line:rgba(255,255,255,.14);--teal:#3fd0b0;--red:#ff5a4a;--amber:#ffb02e}
 *{box-sizing:border-box}
@@ -105,7 +105,7 @@ body.touch .keys{display:block}
 .mn>.today{margin-top:auto}
 .mn:after{content:"";flex:none;height:18px;margin-top:auto}
 .brand{display:flex;align-items:center;gap:9px;white-space:nowrap;position:relative;z-index:5;font:800 13px/1 ui-sans-serif,system-ui;letter-spacing:.22em;color:#e9efe9}
-.brand .mark{width:18px;height:18px;border-radius:4px;background:conic-gradient(from 45deg,#4f86d9 0 50%,#e0a14a 0)}
+.brand .mark{width:24px;height:24px;flex:none}.brand .wm{display:flex;gap:.45em}.brand .wm span{font-weight:500;opacity:.78}.brand .wm b{font-weight:850}   /* a sight on the two sides: Atlas blue, Ember orange (2026-11-17) */
 .today{display:grid;gap:10px}
 .eyebrow{font:700 11px/1 ui-monospace,monospace;letter-spacing:.3em;text-transform:uppercase;color:#7ee0bf}
 .next{font:500 14px/1.3 ui-sans-serif,system-ui;color:#a9b7b0;display:flex;align-items:center;gap:8px}
@@ -115,38 +115,13 @@ body.touch .keys{display:block}
 .mn input{width:100%;box-sizing:border-box;height:48px;padding:0 16px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;font:600 16px ui-sans-serif,system-ui;outline:none;transition:border-color .15s,background .15s}
 .mn input::placeholder{color:#8a9892;font-weight:500}
 .mn input:focus{border-color:#7ee0bf;background:rgba(126,224,191,.07)}
-.teams{display:grid;grid-template-columns:1fr 1fr 74px;gap:8px}
-.teams button{height:48px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#dfe7e2;font:700 14px ui-sans-serif,system-ui;letter-spacing:.04em;cursor:pointer;transition:all .15s}
-.teams button i{width:10px;height:10px;border-radius:50%}
-.teams .atlas i{background:#4f86d9}.teams .ember i{background:#e0a14a}
-.teams button:hover{border-color:rgba(255,255,255,.3)}
-.teams .atlas.on{border-color:#4f86d9;background:rgba(79,134,217,.2);color:#fff}
-.teams .ember.on{border-color:#e0a14a;background:rgba(224,161,74,.2);color:#fff}
-.teams .auto.on{border-color:#7ee0bf;background:rgba(126,224,191,.14);color:#fff}
 .play{height:62px;border:0;border-radius:14px;background:linear-gradient(180deg,#86f0cb,#4fcfa5);color:#04241a;font:850 18px ui-sans-serif,system-ui;letter-spacing:.24em;text-transform:uppercase;cursor:pointer;box-shadow:0 10px 30px rgba(79,207,165,.28);transition:transform .12s,box-shadow .12s}
 .play:hover{transform:translateY(-1px);box-shadow:0 14px 36px rgba(79,207,165,.38)}
-.status{min-height:16px;font:500 13px ui-sans-serif,system-ui;color:#f2c14e}
-.priv{display:grid;gap:0;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(7,9,10,.5);backdrop-filter:blur(8px);overflow:hidden}
-.priv .tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid rgba(255,255,255,.08)}
-.priv .tabs button{height:42px;border:0;background:transparent;color:#8e9b94;font:650 12.5px ui-sans-serif,system-ui;letter-spacing:.04em;cursor:pointer;box-shadow:inset 0 -2px 0 transparent;transition:color .15s,box-shadow .15s}
-.priv .tabs button:hover{color:#dfe7e2}
-.priv .tabs button.on{color:#fff;box-shadow:inset 0 -2px 0 #7ee0bf}
-.priv .pane{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px}
-.priv[hidden],.priv .pane[hidden]{display:none}
-.priv .seg2{display:grid;grid-template-columns:1fr 1fr;padding:3px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
-.priv .seg2 button{height:34px;border:0;border-radius:8px;background:transparent;color:#8e9b94;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer;transition:background .15s,color .15s}
-#gmode{row-gap:3px}.priv .seg2 button.on{background:rgba(126,224,191,.16);color:#7ee0bf}
-.priv .botn{grid-column:1/-1;display:grid;grid-template-columns:1fr 34px 34px 34px;align-items:center;gap:4px;padding:0 4px;font:600 12.5px ui-sans-serif,system-ui;color:#a9b7b0;transition:opacity .15s}
-.priv .botn button{height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font:700 15px/1 ui-sans-serif,system-ui;cursor:pointer}
-.priv .botn button:hover:not(:disabled){border-color:#7ee0bf;color:#7ee0bf}
-.priv .botn button:disabled{opacity:.35;cursor:default}
-.priv .botn[hidden]{display:none}.priv .botn b{text-align:center;color:#fff;font:800 15px ui-monospace,monospace;font-variant-numeric:tabular-nums}
-.priv .botn.off{opacity:.35;pointer-events:none}
-.priv .go2{height:42px;padding:0 22px;border-radius:11px;border:1px solid rgba(126,224,191,.5);background:transparent;color:#7ee0bf;font:700 13px ui-sans-serif,system-ui;letter-spacing:.04em;cursor:pointer;transition:background .15s}
-.priv .go2:hover{background:rgba(126,224,191,.1)}
-.priv #code{height:42px;margin:0;text-transform:uppercase;letter-spacing:.3em;font:700 15px ui-monospace,monospace}
-.priv #code::placeholder{letter-spacing:.04em;text-transform:none;font:500 14px ui-sans-serif,system-ui}
-.priv button:focus-visible{outline:2px solid #7ee0bf;outline-offset:-2px}
+.status{min-height:0;font:500 13px ui-sans-serif,system-ui;color:#f2c14e}
+.joinrow .go2{height:42px;padding:0 22px;border-radius:11px;border:1px solid rgba(126,224,191,.5);background:transparent;color:#7ee0bf;font:700 13px ui-sans-serif,system-ui;letter-spacing:.04em;cursor:pointer;transition:background .15s}
+.joinrow .go2:hover{background:rgba(126,224,191,.1)}
+.joinrow #code{height:42px;margin:0;text-transform:uppercase;letter-spacing:.3em;font:700 15px ui-monospace,monospace}
+.joinrow #code::placeholder{letter-spacing:.04em;text-transform:none;font:500 14px ui-sans-serif,system-ui}
 .leave{height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(7,9,10,.4);color:#dfe7e2;font:650 14px ui-sans-serif,system-ui;letter-spacing:.04em;cursor:pointer;transition:border-color .15s,color .15s}
 .leave:hover{border-color:#ef5b4b;color:#ff8a7d}
 .leave[hidden]{display:none}
@@ -168,6 +143,35 @@ body.touch .keys{display:block}
 .lb figcaption small{font:500 11.5px ui-sans-serif,system-ui;color:#9fb0a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #lbpastw{display:grid;gap:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
 #lbpastw[hidden]{display:none}
+body.rt #money{display:none}   /* Retakes: nothing is bought */
+/* the mode cards and the setup popup (2026-11-17): one way into any game, as CS */
+.modes{display:grid;gap:10px}.modes[hidden]{display:none}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mcard{display:grid;gap:3px;align-content:start;min-height:56px;padding:9px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(7,9,10,.5);backdrop-filter:blur(8px);color:#fff;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+.mcard b{font:750 14.5px ui-sans-serif,system-ui}.mcard small{font:500 11.5px/1.35 ui-sans-serif,system-ui;color:#9fb0a8}
+.mcard:hover,.mcard:focus-visible{border-color:#7ee0bf;background:rgba(126,224,191,.09);outline:none;transform:translateY(-1px)}
+.mcard.hot{grid-column:1/-1;border-color:rgba(126,224,191,.45);background:linear-gradient(180deg,rgba(126,224,191,.16),rgba(126,224,191,.05))}.mcard.hot b{font-size:16px}
+.you .pz2:not(:has(.leave:not([hidden]))),.you .status:empty,.you .play[hidden]{display:none}
+.mn{overflow-y:auto;scrollbar-width:none}.mn>.modes{flex:none}
+.joinrow{display:grid;grid-template-columns:1fr auto;gap:8px}.joinrow input{height:42px!important;font-size:14px!important;text-transform:uppercase}
+.msetup{position:absolute;inset:0;z-index:8;display:grid;place-items:center;padding:16px;background:rgba(4,6,7,.62);backdrop-filter:blur(4px);animation:msin .16s ease-out}
+.msetup[hidden]{display:none}
+@keyframes msin{from{opacity:0}to{opacity:1}}
+.msbox{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;display:grid;gap:12px;padding:20px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:#0c1113;color:#e8ece9;font-family:ui-sans-serif,system-ui}
+.msbox h2{margin:0;font:800 22px ui-sans-serif,system-ui}.msbox p{margin:0;font:500 13px/1.45 ui-sans-serif,system-ui;color:#a9b7b0}.msbox .msnote:empty{display:none}.msbox .msnote{color:#7ee0bf}
+.msrow{display:grid;grid-template-columns:96px 1fr;align-items:center;gap:10px;font:650 12.5px ui-sans-serif,system-ui;color:#a9b7b0}.msrow[hidden]{display:none}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:3px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}.seg3.two{grid-template-columns:1fr 1fr}.seg3.four{grid-template-columns:repeat(4,1fr)}
+.seg3 button{height:34px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:8px;background:transparent;color:#8e9b94;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer}
+.seg3 button i{width:8px;height:8px;border-radius:50%}.seg3 .atlas i{background:#4f86d9}.seg3 .ember i{background:#e0a14a}
+.seg3 button.on{background:rgba(126,224,191,.16);color:#7ee0bf}.seg3 .atlas.on{background:rgba(79,134,217,.22);color:#fff}.seg3 .ember.on{background:rgba(224,161,74,.22);color:#fff}
+.seg3 button:focus-visible,.step button:focus-visible,.msact button:focus-visible{outline:2px solid #7ee0bf;outline-offset:1px}
+.step{display:flex;align-items:center;gap:8px}.step b{min-width:22px;text-align:center;font:800 15px ui-monospace,monospace;color:#fff}.step small{margin-left:-6px;color:#8e9b94}
+.step button{width:34px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font:700 15px/1 ui-sans-serif,system-ui;cursor:pointer}.step button:disabled{opacity:.35;cursor:default}
+.msact{display:grid;grid-template-columns:auto 1fr;gap:10px;margin-top:4px}.msact .play{height:52px;font-size:16px}
+.msbox{overflow-x:hidden}.msrow>*,.seg3>*{min-width:0}.seg3 button{min-width:0;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:480px){.msrow{grid-template-columns:1fr;gap:5px}.seg3 button{font-size:12px}.msbox{padding:16px 14px}}   /* narrow phones: each label above its control */
+.msback{height:52px;padding:0 18px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#dfe7e2;font:700 14px ui-sans-serif,system-ui;cursor:pointer}
+
 /* the board's tabs (2026-11-17): today's best, lifetime stats for the name in the box */
 .lbtabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:3px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
 .lbtabs button{height:28px;border:0;border-radius:7px;background:transparent;color:#8e9b94;font:650 12px ui-sans-serif,system-ui;cursor:pointer}
@@ -219,11 +223,14 @@ body.touch .keys{display:block}
   .brand{grid-column:1/-1}
   .mn>.today{grid-column:1;grid-row:2;margin-top:0;gap:4px}
   .you{grid-column:1;grid-row:3;align-self:start;gap:8px}
-  .priv,.share{grid-column:2;grid-row:2/4;align-self:start}
+  .modes,.share{grid-column:2;grid-row:2/4;align-self:start}
+  .modes{gap:8px}.mgrid{grid-template-columns:repeat(3,1fr);gap:6px}.mcard{min-height:0;padding:9px 10px}.mcard small{display:none}.mcard b,.mcard.hot b{font-size:13.5px}
+  .joinrow input,.joinrow .go2{height:38px!important}
+  .msbox{gap:7px;padding:12px 16px}.msbox h2{font-size:18px}.msbox p{font-size:12px;line-height:1.35}.msrow{grid-template-columns:84px 1fr}
+  .seg3 button{height:30px}.step button{height:28px}.msact .play,.msback{height:42px}
   .eyebrow{display:none}
   #start .today h1{font-size:26px}
   .mn input{height:42px}
-  .teams button{height:40px}
   .play{height:46px}
 }
 
@@ -281,7 +288,6 @@ body.touch #feed div:nth-child(n+4){display:none}
 body.touch #radar{top:76px;left:calc(12px + env(safe-area-inset-left));width:104px;height:104px}
 body:not(.playing) #radar{display:none}
 #feed small.tg{padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.1);color:#d9dee0;font-weight:600;letter-spacing:.02em}
-.priv .seg2.full{grid-column:1/-1}
 /* Competitive (2026-11-14): money under the radar, the plant/defuse bar, the buy menu, BOMB on the clock */
 #money{position:absolute;left:14px;top:184px;display:none;gap:10px;align-items:baseline;font:700 20px/1 ui-monospace,monospace;color:#7ee0bf;text-shadow:0 1px 3px #000;pointer-events:none}
 body.comp.playing #money{display:flex}
@@ -296,7 +302,7 @@ body.touch #money{top:186px;left:calc(12px + env(safe-area-inset-left));font-siz
 #buy button:hover,#buy button:focus-visible{border-color:rgba(255,255,255,.25);outline:none}#buy button.no{opacity:.4}#buy button b{color:#7ee0bf;font:600 12px ui-monospace,monospace}
 #buy .bf{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;margin-top:4px}#buy .bf button{display:block;text-align:center;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.1)}
 #buy kbd{font:700 11px ui-monospace,monospace;color:var(--dim)}#buy p{margin:6px 0 0;font:500 11px ui-sans-serif,system-ui;color:var(--dim)}
-body.touch #buy{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
+body.touch #buy{top:62px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 74px);overflow:auto}
 #clock.bomb{color:var(--red);letter-spacing:.08em}
 #nades .c4{color:var(--amber)}#nades .c4.on{color:#fff}#nades .kit{color:#9cc6ff}
 #tC4{right:calc(5vw + 236px + env(safe-area-inset-right));bottom:calc(28vh + 30px)}#tBuy{left:calc(124px + env(safe-area-inset-left));top:128px}
@@ -309,9 +315,6 @@ body.touch #buy{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right))
 body.kcam #spec{top:58px;bottom:auto}body.kcam #spec small{color:#ef5b4b}body.hlcam #spec small{color:#ffd24a}
 body.kcam #kc{bottom:12px;transform:translateX(-50%) scale(.82);transform-origin:50% 100%}
 body.kcam #hp,body.kcam #nades,body.kcam #wname,body.kcam #big,body.kcam #msg{visibility:hidden}#spec small{font:600 11px ui-sans-serif,system-ui;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}#spec span{font:600 12px ui-monospace,monospace;color:#a9b7b0}
-.priv .botn{grid-column:1}.priv .cyc{min-width:0;height:30px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#d7dfda;font:650 12.5px ui-sans-serif,system-ui;cursor:pointer}
-.priv .cyc:hover{border-color:rgba(126,224,191,.5)}.priv .cyc.off{opacity:.35;pointer-events:none}.priv{flex-shrink:0}
-.priv .seg2 button:focus-visible,.priv .cyc:focus-visible{outline:1px solid #7ee0bf}
 /* talking (2026-11-14): the chat log bottom left, its input, the radio menu */
 #chat{position:absolute;left:14px;bottom:90px;width:min(380px,40vw);display:flex;flex-direction:column;gap:3px;font:600 13px/1.35 ui-sans-serif,system-ui;color:#eef2ef;text-shadow:0 1px 2px #000;pointer-events:none}
 #chat div{padding:3px 8px;border-radius:6px;background:var(--hud);transition:opacity 1.2s}#chat div.old{opacity:0}#chat small{color:var(--dim);font-weight:600}
@@ -331,14 +334,20 @@ body.touch #chat{bottom:auto;top:200px;width:42vw;font-size:11px}
 @media (max-height:520px) and (orientation:landscape){.keys .pad{left:auto;right:0;top:calc(100% + 10px);width:min(380px,60vw)}}
 /* phones (2026-11-14): the radio next to Buy, menus kept on screen, votes answered by a tap, text clear of each other */
 #tRadio{left:calc(124px + env(safe-area-inset-left));top:76px}   /* beside the radar: the top row meets the score bar on narrow phones */
-body.touch #radio{top:12px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 24px);overflow:auto}
+body.touch #radio{top:62px;left:auto;right:calc(12px + env(safe-area-inset-right));max-height:calc(100vh - 74px);overflow:auto}
 body.touch #chatin{bottom:auto;top:12px;left:50%;transform:translateX(-50%);width:min(420px,60vw)}
 body.touch #chat{top:210px;width:calc(50vw - 80px)}   /* lines end before the centred Pick up button */
 #msg.low{top:max(36%,160px)}
 #vote{pointer-events:auto}#vote .vb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 #vote .vb button{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:#fff;font:700 13px ui-sans-serif,system-ui;cursor:pointer}
 #vote .vb button:hover,#vote .vb button:focus-visible{border-color:#7ee0bf;outline:none}#vote kbd{font:600 10px ui-monospace,monospace;color:var(--dim)}
-body.touch #buy,body.touch #radio,body.touch #vote,body.touch #chatin{z-index:5}   /* above the touch layer, so their buttons take the taps */
+body.touch #buy,body.touch #radio,body.touch #vote,body.touch #chatin,body.touch #board{z-index:5}
+/* a panel open on a phone (scores, radio, buy, vote, chat; 2026-11-17): the action buttons fade out so nothing overlaps
+   or gets pressed through it; the stick, pause and the panels' own buttons stay */
+body.touch #touch .tb{transition:opacity .15s}
+body.boardon #big,body.boardon #msg{visibility:hidden}
+body.touch #kc{transform:translateX(-50%) scale(.8);transform-origin:50% 100%;bottom:10px}body.touch.kcam #kc{transform:translateX(-50%) scale(.72)}   /* the scoreboard over the centre message: one at a time */
+body.touch.tpanel #touch .tb:not(#tMenu):not(#tBoard):not(#tRadio):not(#tBuy){opacity:0;pointer-events:none}   /* above the touch layer, so their buttons take the taps */
 #buy,#radio{pointer-events:auto}   /* the HUD ignores the pointer; these two menus must take clicks and taps */
 body.touch #bhint{display:none!important}   /* phones have the Buy button */
 body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:min(300px,46vw);padding:10px 12px}   /* phones: under the score bar, clear of Fire */
@@ -395,10 +404,10 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
   <div id="touch">
     <div id="stick"><i></i></div>
     <button type="button" class="tb sm" id="tMenu" aria-label="Menu"><span class="pz"></span></button>
-    <button type="button" class="tb sm" id="tBoard" data-key="Tab">Scores</button>
+    <button type="button" class="tb sm" id="tBoard" data-toggle="Tab">Scores</button>
     <button type="button" class="tb big" id="tFire" aria-label="Fire"><span class="fx"></span></button>
     <button type="button" class="tb" id="tJump" data-key="Space">Jump</button>
-    <button type="button" class="tb" id="tDuck" data-toggle="ControlLeft">Crouch</button>
+    <button type="button" class="tb" id="tDuck" data-toggle="TouchDuck">Crouch</button>
     <button type="button" class="tb" id="tReload" data-key="KeyR">Reload</button>
     <button type="button" class="tb" id="tSwap" data-key="KeyQ">Switch</button>
     <button type="button" class="tb" id="tNade" data-key="Digit4">Nade</button>
@@ -415,7 +424,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
 <div id="start">
   <div class="bg" id="bg"></div>
   <main class="mn">
-    <div class="brand"><span class="mark"></span>DAILY MAP<span class="online" id="online">&nbsp;</span><details class="keys"><summary>Settings</summary>
+    <div class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.4" fill="#16201f"/><clipPath id="CL"><circle cx="12" cy="12" r="6.6"/></clipPath><g clip-path="url(#CL)" fill="none" stroke="#e9efe9" stroke-opacity=".55" stroke-width="1"><path d="M3 9.5c3-2.2 5.5 1.2 8.5-.6s5.5-2.4 9.5.3"/><path d="M3 14.6c3.4-1.8 5.6 1.4 9-.4s5.2-2 9 .6"/></g><path d="M3.66 9.92A8.6 8.6 0 0 1 9.92 3.66M9.92 20.34A8.6 8.6 0 0 1 3.66 14.08" fill="none" stroke="#4f86d9" stroke-width="2.4" stroke-linecap="round"/><path d="M14.08 3.66A8.6 8.6 0 0 1 20.34 9.92M20.34 14.08A8.6 8.6 0 0 1 14.08 20.34" fill="none" stroke="#e0a14a" stroke-width="2.4" stroke-linecap="round"/><path d="M12 .8v3.4M12 19.8v3.4M.8 12h3.4M19.8 12h3.4" stroke="#e9efe9" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.7" fill="#e9efe9"/></svg><span class="wm"><span>DAILY</span><b>MAP</b></span><span class="online" id="online">&nbsp;</span><details class="keys"><summary>Settings</summary>
       <div class="pad"><div class="sets">
           <label class="srow mouse-only"><span>Sensitivity</span><input type="range" id="setSens" min="0.3" max="12" step="0.05"><input type="number" class="snum" id="setSensN" min="0.1" max="30" step="0.01" aria-label="Sensitivity value"></label>
           <label class="srow touch-only"><span>Look speed</span><input type="range" id="setTsens" min="0.3" max="2.5" step="0.05"><output id="setTsensV"></output></label>
@@ -438,12 +447,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
     </section>
     <section class="you">
       <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Your name" aria-label="Your name">
-      <div class="teams" id="teams">
-        <button type="button" data-team="ct" class="atlas"><i></i>Atlas</button>
-        <button type="button" data-team="t" class="ember"><i></i>Ember</button>
-        <button type="button" data-team="auto" class="auto on">Auto</button>
-      </div>
-      <button type="button" class="play" id="play">Play</button>
+      <button type="button" class="play" id="play" hidden>Resume</button>
       <div class="pz2"><button type="button" class="leave" id="unstuck" hidden>Respawn</button><button type="button" class="leave" id="leave" hidden>Leave game</button></div>
       <span class="status" id="load"></span>
     </section>
@@ -452,12 +456,33 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
       <div class="sharerow"><b id="rcode">----</b><button type="button" id="copylink">Copy invite link</button></div>
       <span class="hint" id="sharehint">Friends open the link, or type the code under Join</span>
     </section>
-    <section class="priv" id="priv">
-      <div class="tabs" role="tablist"><button type="button" role="tab" class="on" data-tab="mk" aria-selected="true">Create a room</button><button type="button" role="tab" data-tab="jn" aria-selected="false">Join a room</button></div>
-      <div class="pane" id="mk"><div class="seg2 full" id="gmode" role="radiogroup"><button type="button" class="on" data-m="dm" role="radio" aria-checked="true">Deathmatch</button><button type="button" data-m="comp" role="radio" aria-checked="false">Competitive</button><button type="button" data-m="gg" role="radio" aria-checked="false">Gun Game</button><button type="button" data-m="wing" role="radio" aria-checked="false">Wingman</button></div><div class="seg2" id="bots" role="radiogroup"><button type="button" class="on" data-b="1" role="radio" aria-checked="true">With bots</button><button type="button" data-b="0" role="radio" aria-checked="false">Friends only</button></div><button type="button" class="go2" id="create">Create</button><div class="botn" id="botn"><span>Bots</span><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div><button type="button" class="cyc" id="bdiff" aria-label="Bot difficulty, click to change">Normal</button><div class="botn" id="frz" hidden><span>Freeze time, seconds</span><button type="button" data-d="-1" aria-label="Shorter freeze time">&minus;</button><b id="frzv">5</b><button type="button" data-d="1" aria-label="Longer freeze time">+</button></div></div>
-      <div class="pane" id="jn" hidden><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join</button></div>
+    <!-- one way in, as CS (2026-11-17): pick a mode, set it up in its popup, start -->
+    <section class="modes" id="priv">
+      <div class="mgrid" id="mgrid">
+        <button type="button" class="mcard hot" data-m="public"><b>Today's match</b><small>Deathmatch on today's map with everyone online</small></button>
+        <button type="button" class="mcard" data-m="comp"><b>Competitive</b><small>5 v 5, the bomb, money, first to 9</small></button>
+        <button type="button" class="mcard" data-m="wing"><b>Wingman</b><small>2 v 2 on one bomb site</small></button>
+        <button type="button" class="mcard" data-m="gg"><b>Gun Game</b><small>Every kill hands you the next gun</small></button>
+        <button type="button" class="mcard" data-m="dm"><b>Deathmatch</b><small>Your own room, invite friends</small></button>
+        <button type="button" class="mcard" data-m="dc"><b>Challenge</b><small>8 kills against bots, fastest wins</small></button>
+        <button type="button" class="mcard" data-m="rt"><b>Retakes</b><small>The bomb is down: hold the site or retake it</small></button>
+      </div>
+      <div class="joinrow"><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join a room</button></div>
     </section>
   </main>
+  <div class="msetup" id="msetup" hidden role="dialog" aria-modal="true" aria-labelledby="msTitle">
+    <div class="msbox">
+      <h2 id="msTitle">Mode</h2>
+      <p id="msDesc"></p>
+      <div class="msrow"><span>Side</span><div class="seg3" id="teams"><button type="button" data-team="ct" class="atlas"><i></i>Atlas</button><button type="button" data-team="t" class="ember"><i></i>Ember</button><button type="button" data-team="auto" class="auto on">Auto</button></div></div>
+      <div class="msrow" id="msBots"><span>Players</span><div class="seg3 two" id="bots"><button type="button" class="on" data-b="1">With bots</button><button type="button" data-b="0">Friends only</button></div></div>
+      <div class="msrow" id="msBotn"><span>Bots a side</span><div class="step" id="botn"><button type="button" data-d="-1" aria-label="Fewer bots">&minus;</button><b id="botv">3</b><button type="button" data-d="1" aria-label="More bots">+</button></div></div>
+      <div class="msrow" id="msDiff"><span>Bot skill</span><div class="seg3 four" id="bdiff"><button type="button" data-d="easy">Easy</button><button type="button" data-d="normal" class="on">Normal</button><button type="button" data-d="hard">Hard</button><button type="button" data-d="expert">Expert</button></div></div>
+      <div class="msrow" id="msFrz"><span>Freeze time</span><div class="step" id="frz"><button type="button" data-d="-1" aria-label="Shorter freeze time">&minus;</button><b id="frzv">5</b><small>s</small><button type="button" data-d="1" aria-label="Longer freeze time">+</button></div></div>
+      <p class="msnote" id="msNote"></p>
+      <div class="msact"><button type="button" class="msback" id="msBack">Back</button><button type="button" class="play" id="msGo">Start</button></div>
+    </div>
+  </div>
   <aside class="lb" id="lb">
     <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false">Challenge</button></div>
     <div class="lbp" id="lbToday">

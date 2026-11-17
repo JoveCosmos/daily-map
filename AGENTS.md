@@ -17,7 +17,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   snapshot disagrees (replaying the commands the server has not acknowledged yet), and draws everyone else
   interpolated about 100 ms in the past. It also does rendering, sound, the HUD, the menu, settings and touch controls.
 - **Modes, grenades and the bomb are the server's alone.** Deathmatch, Competitive (money, buying, the C4, rounds,
-  halftime, votes), Wingman (Competitive two a side on one site, `MODES.wing`), Gun Game (`LADDER`, `ggKit`, `ggLevel`;
+  halftime, votes), Wingman (Competitive two a side on one site, `MODES.wing`), Retakes (`MODES.rt`: the bomb planted when the freeze ends,
+  Ember spawned around it, set loadouts in `rtKit`, no buying), Gun Game (`LADDER`, `ggKit`, `ggLevel`;
   no pickups or drops) and the daily challenge (`MODES.dc`, solo against four bots) live in `server.js`; `DMLIKE` and
   `COMP` group them, and `game.js` mirrors that with `dmLike()` and `compLike()`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
   lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `game.js`: change
@@ -31,6 +32,10 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   menu and all CSS.
 - **The map switch is temporary.** An arrow by the menu's "Next:" moves the public room on now (`/skipmap`,
   `MAP_SKIP` in server.js, on by default for testing, `MAP_SKIP=0` turns it off); remove it when testing is done.
+- **One way into a game.** The menu shows a card per mode (`#mgrid`); a card opens the setup popup (`#msetup`, `msOpen`)
+  with only the rows that mode lists in `MODEINFO` (side for every mode, bots, their skill, freeze time) and one Start
+  (`msGo`). Joining by code or invite link opens the same popup. `#play` is only Resume / Continue during a game. A new
+  mode needs a card, a `MODEINFO` entry and its case in `msGo`.
 - **Replays come from the server's record.** Every snapshot tick the server keeps each player's position, view, weapon
   and shots for 10 s (`record`, `e.hist`). A death sends the victim a short record (`sendKillcam`, message `kc`); a round's
   end sends everyone its best moment (`pickHighlight`, message `hl`). Only the dead or the finished round see it, so it
@@ -101,6 +106,16 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   that mode. Test phones by tapping through the menu like a player.
 - **A message's `t` is its type.** A field called `t` in the same object overwrites it and the client drops the message
   (the challenge result did this once).
+- **A phone panel fades the controls.** While scores, radio, buy, a vote or chat is open, or the player is dead, the body
+  gets `tpanel` and the action buttons fade out; the stick and the panels' own buttons stay. Panels sit below the score
+  bar. One writer sets `tpanel` (next to the scoreboard in `render`): add a new panel to that condition.
+- **The phone's crouch button has its own input** (`TouchDuck`). It once toggled Ctrl, and when the keyboard crouch
+  became C it silently did nothing. A touch button should never borrow a keyboard binding the player can change.
+- **HUD text is cached.** About twenty HUD elements get a setter that skips an unchanged value (see "HUD writes only when
+  the value changes" in game.js), because render() sets them every frame. Writing the same text through another
+  route (a child element, `innerText`) bypasses the cache: use the same property.
+- **Placed sounds have a budget** (`AT` in game.js): HRTF only for near sounds and six at a time, distant ones dropped
+  when many are playing, wall rays within 60 m. A new sound through `at()` inherits this; one played around it does not.
 - **Headless test browsers join the game.** A test that is killed by a timeout can leave its browser running and
   connected as a phantom player. Close test browsers explicitly.
 
@@ -113,7 +128,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   Competitive match with bots: buying, plants, defuses, halftime), `server/nettest.mjs` (hit registration).
 
 - Run the server (`cd server && npm install && node server.js`), open `http://127.0.0.1:8945/`.
-- `?autoplay&debug` starts a game straight away and exposes debug state, for scripted tests.
+- `?autoplay&debug` starts a game straight away and exposes debug state, for scripted tests. It never captures the
+  mouse, so what shows only while playing (the radar, the phone controls) stays hidden there; test those by playing.
 - Server settings: `PORT` (default 8945), `DAILY_PERIOD` (seconds per map in the public room's rotation, default 3600).
 - Competitive test settings: `FREEZE`, `ROUND_TIME`, `BOMB_TIME`, `HALF`, `TO_WIN`, `START_MONEY` (shorter matches),
   `BOMB_TO=<name>` (who carries the bomb), `TEST_PLANT=1` (a bomb already on A), `TEST_BOTS=ct,t` (bots per side),

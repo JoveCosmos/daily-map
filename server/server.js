@@ -51,6 +51,10 @@ const MODES = { dm: { name: "Deathmatch", time: ENV("DM_TIME") ?? 600 }, rounds:
 MODES.wing = { ...MODES.comp, name: "Wingman", roundTime: ENV("ROUND_TIME") ?? 90, perTeam: 2 };
 /* the daily challenge (2026-11-17): alone against four hard bots that keep coming back, on the day's challenge map;
    eight kills as fast as you can, each death 10 s on the clock. The first finished run of a name each UTC day counts */
+/* Retakes, as CS's (2026-11-17): the bomb is already down when the round starts; Ember hold the site it is on, Atlas
+   come in from their side to retake it and defuse. No buying: a set loadout each round (mostly rifles, now and then a
+   pistol round), armour, a grenade, kits for Atlas. First to 8, sides swap at halftime */
+MODES.rt = { ...MODES.comp, name: "Retakes", roundTime: ENV("ROUND_TIME") ?? 60, toWin: ENV("TO_WIN") ?? 8, maxRounds: 14, half: ENV("HALF") ?? 7 };
 MODES.dc = { name: "Daily challenge", time: 600, kills: ENV("DC_KILLS") ?? 8, penalty: 10 };
 const DC_EPOCH = Date.UTC(2026, 10, 16), dcDay = () => Math.floor((Date.now() - DC_EPOCH) / 86400000) + 1;
 const LADDER = ["ak", "m4", "aug", "famas", "p90", "mp7", "mac10", "xm1014", "awp", "ssg08", "deagle", "p250", "glock", "knife"];
@@ -63,7 +67,7 @@ const FREEZES = [0, 3, 5, 8, 10, 15];   // the freeze times a room's creator can
 function createRoom(code, title, mode = "dm", botCfg = null, FF = false, mapId = "standin", diff = "normal", freeze = null) {   // FF: friendly fire
   const BD = DIFF[diff] || DIFF.normal;
   const MAP_ID = WORLDS[mapId] ? mapId : "standin", W = WORLDS[MAP_ID], SLOT = code === "DAILY" ? slotNow() : null;   // SLOT: this turn of the rotation, for the board   // botCfg: [CT, T] fixed counts, or null to fill empty slots to PER_TEAM
-  const MODE = MODES[mode] ? mode : "dm", G = { ph: "live", until: 0, round: 0, sc: [0, 0], msg: "", winner: -1, tSite: 0, buyUntil: 0, rk: [], clutch: [null, null], hl: null }, DC = MODE === "dc", DMLIKE = MODE === "dm" || MODE === "gg" || DC, ROUNDS = !DMLIKE, COMP = MODE === "comp" || MODE === "wing", WING = MODE === "wing", GG = MODE === "gg", CM = COMP ? MODES[MODE] : MODES.comp;
+  const MODE = MODES[mode] ? mode : "dm", G = { ph: "live", until: 0, round: 0, sc: [0, 0], msg: "", winner: -1, tSite: 0, buyUntil: 0, rk: [], clutch: [null, null], hl: null }, DC = MODE === "dc", DMLIKE = MODE === "dm" || MODE === "gg" || DC, ROUNDS = !DMLIKE, COMP = MODE === "comp" || MODE === "wing" || MODE === "rt", WING = MODE === "wing", RT = MODE === "rt", GG = MODE === "gg", CM = COMP ? MODES[MODE] : MODES.comp;
 /* ── entities: humans and bots share the same state and hit boxes ────────────── */
 const ents = new Map(); let nextId = 1, tick = 0, time = 0;
 const hist = [];                                  // per tick: { time, states: Map(id -> {x,y,z,duck,alive}) }, last second
@@ -91,6 +95,9 @@ if (process.env.DUEL === "1") {
 }
 function pickSpawn(e) {
   if (DUEL) return DUEL[e.team];
+  if (RT && G.rtSite != null && SITES[G.rtSite]) {   // Retakes: Ember around the planted site, Atlas on their own side well away from it
+    const sp = SITES[G.rtSite].p, ok = n => { const d = n.p.distanceTo(sp); return e.team === 1 ? d > 3 && d < 13 : d > 28 && SIDE[0].includes(n.i); };
+    const pool = W.nodes.filter(ok); if (pool.length) return pool[(Math.random() * pool.length) | 0]; }
   if (process.env.SPAWN_AT && !e.bot) { const x = PK.find(k => k.w === process.env.SPAWN_AT); if (x) return { p: x.p.clone().add(new THREE.Vector3(.6, 0, 0)), i: 0 }; }   // test only
   // the team's side: every walkable point clearly nearer its own end of the map than the other's (about a third of the
   // map), not a fixed spot. A random point of it no living enemy can see and no closer than 15 m to one (a fixed
@@ -341,7 +348,7 @@ function lineups() {
   for (const st of ALLSITES) {
     const path = W.astar(W.spawn[1][0] ?? 0, W.nearest(st.p)); let got = 0;
     for (const n of path.map(i => W.nodes[i]).filter(n => { const d = n.p.distanceTo(st.p); return d > 11 && d < 26; }).reverse()) {
-      if (got >= 2 || Date.now() - t0 > 4000) break;
+      if (got >= 2 || Date.now() - t0 > 600) break;   // a big map must not hold every room's tick for long
       if (out.some(l => Math.hypot(l.p[0] - n.p.x, l.p[2] - n.p.z) < 5)) continue;
       const f = fake.s; f.pos.copy(n.p); f.vel.set(0, 0, 0); f.duck = 0; f.alive = true; f.w = "smoke";
       const a = botAim(fake, "smoke", st.p);
@@ -551,7 +558,7 @@ const ALLSITES = W.sites || (W.sites = (() => {
 const SITES = WING ? [ALLSITES[1] || ALLSITES[0]] : ALLSITES;   // Wingman plays one site (CS uses B)
 const siteAt = p => SITES.findIndex(x => Math.hypot(p.x - x.p.x, p.z - x.p.z) < x.r && Math.abs(p.y - x.p.y) < 2);
 const inBuy = e => !!e.spawnP && e.spawnP.distanceTo(e.s.pos) < 12;   // the buy zone: around where you spawned this round (spawns spread over your side)
-const canBuy = e => COMP && e.s.alive && (G.ph === "freeze" || (G.ph === "live" && time < G.buyUntil)) && inBuy(e);
+const canBuy = e => COMP && !RT && e.s.alive && (G.ph === "freeze" || (G.ph === "live" && time < G.buyUntil)) && inBuy(e);
 const BOMB = { by: null, drop: null, planted: null, plant: null, defuse: null, boomed: false, defused: false };
 const lossStreak = [0, 0];
 /* CS's prices, [price, team] (team: 0 CT only, 1 T only, absent both) and its kill rewards */
@@ -563,6 +570,12 @@ const REWARD = { knife: 1500, mp9: 600, mac10: 600, mp7: 600, ump: 600, nova: 90
 const pay = (e, x) => { e.money = clamp((e.money || 0) + x, 0, CM.maxMoney); };
 /* a player's kit at a round's start: the team pistol and knife; a survivor keeps what it had (CS) */
 function kitOf(e) { const s = e.s; return { zeus: s.zeus, prim: s.prim, pa: s.prim ? held(s, s.prim) : null, sec: s.sec, sa: s.sec ? held(s, s.sec) : null, nades: { ...s.nades }, armor: s.armor, helmet: s.helmet, kit: e.kit }; }
+function rtKit(e) {   // Retakes' loadout: everyone the same tier this round
+  const s = e.s; compKit(e, null);
+  if (G.rtPistol) { equip(s, e.team ? "glock" : "usp"); equip(s, "deagle"); s.armor = 100; }
+  else { equip(s, e.team ? "glock" : "usp"); equip(s, e.team ? "ak" : "m4"); s.armor = 100; s.helmet = true; }
+  s.nades[["flash", "smoke", "he"][(Math.random() * 3) | 0]] = 1; if (e.team === 0) e.kit = true; s.last = s.sec;
+}
 function compKit(e, keep) {
   const s = e.s; s.prim = null; s.pa = [0, 0]; s.c4 = false; s.zeus = false; s.burstOn = false; for (const n of NADES) s.nades[n] = 0; s.armor = 0; s.helmet = false; e.kit = false;
   equip(s, e.team ? "glock" : "usp"); s.last = "knife";
@@ -711,11 +724,13 @@ function startRound() {
   resetPickups(); balanceBots();
   if (COMP) {
     Object.assign(BOMB, { by: null, drop: null, planted: null, plant: null, defuse: null, boomed: false, defused: false }); G.tSite = SITES.length > 1 && Math.random() < .5 ? 1 : 0;
+    G.rtSite = RT && SITES.length ? (Math.random() * SITES.length) | 0 : null; G.rtPistol = RT && Math.random() < .2;
     for (const e of ents.values()) { const keep = e.s.alive && G.round > 1 && !half && e.movedRound !== G.round ? kitOf(e) : null;   /* a player moved to the other side starts fresh */ spawnAt(e); compKit(e, keep); e.protect = 0; e.wantPlant = e.wantDefuse = false; }
-    const ts = [...ents.values()].filter(e => e.team === 1 && e.s.alive);
+    if (RT) for (const e of ents.values()) rtKit(e);
+    const ts = RT ? [] : [...ents.values()].filter(e => e.team === 1 && e.s.alive);
     if (ts.length) { BOMB.by = ts.find(e => process.env.BOMB_TO && e.name === process.env.BOMB_TO) || ts[(Math.random() * ts.length) | 0]; BOMB.by.s.c4 = true; }   // BOMB_TO: test only
     G.buyUntil = G.until + CM.buyTime;
-    for (const b of ents.values()) if (b.bot) botBuy(b);
+    if (!RT) for (const b of ents.values()) if (b.bot) botBuy(b);
     roster();
   } else for (const e of ents.values()) { const keep = e.s.alive && e.s.prim ? [e.s.prim, ...held(e.s, e.s.prim)] : null; spawnAt(e); if (keep) { equip(e.s, ...keep); e.s.last = e.s.sec; } e.protect = 0; }
   events.push({ k: "round", n: G.round });
@@ -735,7 +750,9 @@ function match() {
   const R = MODES[MODE];
   if (G.hl && !G.hl.sent && time >= G.hl.at) { G.hl.sent = true; sendHighlight(G.hl); }
   if (!G.round) { startRound(); return; }
-  if (G.ph === "freeze" && time >= G.until) { G.ph = "live"; G.until = time + R.roundTime; }
+  if (G.ph === "freeze" && time >= G.until) { G.ph = "live"; G.until = time + R.roundTime;
+    if (RT && G.rtSite != null && SITES[G.rtSite]) { const st = SITES[G.rtSite]; BOMB.planted = { p: W.nodes[W.nearest(st.p)].p.clone(), site: G.rtSite, at: time, boom: time + CM.bombTime };
+      events.push({ k: "planted", id: 0, site: G.rtSite, p: P3(BOMB.planted.p) }); } }
   else if (G.ph === "live" && COMP) {
     if (process.env.TEST_PLANT && !BOMB.planted && SITES.length) BOMB.planted = { p: SITES[0].p.clone(), site: 0, at: time, boom: time + CM.bombTime };   // test only: a bomb already on A
     bombTick();
@@ -873,7 +890,7 @@ function snapshot() {
       ...(COMP ? { mo: e.money, kit: e.kit ? 1 : 0, c4: s.c4 ? 1 : 0, ib: canBuy(e) ? 1 : 0,
         pp: BOMB.plant && BOMB.plant.by === e ? r2((time - BOMB.plant.t0) / CM.plant) : 0, dp: BOMB.defuse && BOMB.defuse.by === e ? r2((time - BOMB.defuse.t0) / BOMB.defuse.need) : 0,
         bd: e.team === 1 && BOMB.drop ? P3(BOMB.drop) : 0, tmo: [...ents.values()].filter(x => x.team === e.team).map(x => [x.id, x.money | 0]) } : {}), bl: e.blindUntil > time ? r2(e.blindUntil - time) : 0, sn: e.spawnN, syw: e.spawnN ? s.yaw : 0 },
-      e: listFor(e), pk, ev, pv: e.pv && e.pv.length ? e.pv.splice(0) : undefined, ng, sm, fi, sp: SPOT[e.team].map(v => [v.id, r2(v.s.pos.x), r2(v.s.pos.z)]), dc: DECOYS.filter(d => d.by.team !== e.team).map(d => [d.id, r2(d.p.x), r2(d.p.z)]), gm: { m: MODE, ph: G.ph, tl: Math.max(0, Math.ceil(G.until - time)), rn: G.round, sc: G.sc, msg: G.msg, fz: frozen(), dc: DC ? { k: e.kills, d: e.deaths, need: MODES.dc.kills, pen: MODES.dc.penalty, el: G.dcStart && G.ph === "live" ? r2(time - G.dcStart) : 0 } : undefined,
+      e: listFor(e), pk, ev, pv: e.pv && e.pv.length ? e.pv.splice(0) : undefined, ng, sm, fi, sp: SPOT[e.team].map(v => [v.id, r2(v.s.pos.x), r2(v.s.pos.z)]), dc: DECOYS.filter(d => d.by.team !== e.team).map(d => [d.id, r2(d.p.x), r2(d.p.z)]), gm: { m: MODE, ph: G.ph, tl: Math.max(0, Math.ceil(G.until - time)), rn: G.round, sc: G.sc, msg: G.msg, fz: frozen(), rs: RT && G.rtSite != null && SITES[G.rtSite] ? SITES[G.rtSite].name : undefined, dc: DC ? { k: e.kills, d: e.deaths, need: MODES.dc.kills, pen: MODES.dc.penalty, el: G.dcStart && G.ph === "live" ? r2(time - G.dcStart) : 0 } : undefined,
         ...(COMP ? { bp: BOMB.planted ? [...P3(BOMB.planted.p), BOMB.planted.site] : 0, bl: BOMB.planted && !BOMB.boomed && !BOMB.defused ? r2(BOMB.planted.boom - time) : 0, bt: Math.max(0, Math.ceil(G.buyUntil - time)) } : {}) } }));
   }
 }
@@ -889,11 +906,11 @@ function roster() {
     if ([...ents.values()].filter(e => !e.bot).length >= MAX_PLAYERS) { ws.send(JSON.stringify({ t: "x", why: "That room is full" })); ws.close(1013, "full"); return; }
     const humans = [0, 1].map(t => [...ents.values()].filter(e => !e.bot && e.team === t).length);
     if (DC && humans[0] + humans[1] > 0) { ws.send(JSON.stringify({ t: "x", why: "A challenge run is for one player" })); ws.close(1013, "solo"); return; }
-    const team = DC ? 0 : teamPref === "ct" ? 0 : teamPref === "t" ? 1 : humans[0] <= humans[1] ? 0 : 1;
+    const team = DC ? (teamPref === "t" ? 1 : 0) : teamPref === "ct" ? 0 : teamPref === "t" ? 1 : humans[0] <= humans[1] ? 0 : 1;
     const e = addEntity(name, team, false, ws); e.joinedAt = time; e.fin = Math.max(0, FINISHES.indexOf(String(fin || "")));
     balanceBots(); emptySince = 0;
     if (DC) { G.ph = "freeze"; G.until = time + 3; G.dcStart = 0; e.kills = e.deaths = 0; e.dcHs = 0; e.protect = time + 4; }
-    ws.send(JSON.stringify({ t: "w", id: e.id, team: e.team, map: MAP_ID, tick, tm: time, rate: TICK, room: code, title, mode: MODE, radar: RADAR, sites: COMP ? SITES.map(x => [x.name, ...P3(x.p), x.r]) : [], ladder: GG ? LADDER : undefined, lineups: COMP ? lineups().filter(l => SITES.some(x => x.name === l.site)) : undefined }));
+    ws.send(JSON.stringify({ t: "w", id: e.id, team: e.team, map: MAP_ID, tick, tm: time, rate: TICK, room: code, title, mode: MODE, radar: RADAR, sites: COMP ? SITES.map(x => [x.name, ...P3(x.p), x.r]) : [], ladder: GG ? LADDER : undefined, lineups: COMP && !RT ? lineups().filter(l => SITES.some(x => x.name === l.site)) : undefined }));
     roster(); log(`[${code}] join ${e.id} ${name} team ${e.team ? "Ember" : "Atlas"}`);
     ws0.on("message", raw0 => FAKE_LAG ? setTimeout(() => onMsg(raw0), FAKE_LAG) : onMsg(raw0));
     function onMsg(raw) {
@@ -923,6 +940,7 @@ function roster() {
   balanceBots();
   return { code, title, step, join, created: Date.now(), map: MAP_ID,
            moveAll: why => { for (const e of ents.values()) if (!e.bot && e.ws && e.ws.readyState === 1) { e.ws.send(JSON.stringify({ t: "newmap", why, best: SLOT != null ? boardTop(SLOT, 1).find(b => b.k > 0) || null : null })); e.ws.close(4000, "new map"); } },
+           humans: () => { for (const e of ents.values()) if (!e.bot) return true; return false; },
            info: () => { const v = [...ents.values()]; return { code, title, map: MAP_ID, mapName: MAPS[MAP_ID].name, next: code === "DAILY" ? nextDaily() : null, board: SLOT != null ? boardTop(SLOT, 5) : undefined, past: SLOT != null ? boardPast(SLOT, 3) : undefined, mode: MODE, modeName: MODES[MODE].name, ff: FF, bots: v.filter(e => e.bot).length, humans: v.filter(e => !e.bot).length, bots: v.filter(e => e.bot).length, max: MAX_PLAYERS,
              ct: v.filter(e => !e.bot && e.team === 0).length, t: v.filter(e => !e.bot && e.team === 1).length }; },
            idle: () => emptySince && Date.now() - emptySince > 90000 };
@@ -1032,8 +1050,8 @@ wss.on("connection", (ws0, req) => {
     if (rooms.size >= MAX_ROOMS) { ws0.send(JSON.stringify({ t: "x", why: "Too many rooms open, join one of them" })); ws0.close(1013, "too many rooms"); return; }
     const code = newCode(), title = (q.get("title") || name + "'s room").replace(/[^\w .'-]/g, "").slice(0, 24) || code;
     const bpt = parseInt(q.get("bpt"), 10), bots = process.env.TEST_BOTS ? process.env.TEST_BOTS.split(",").map(Number) : q.get("bots") === "0" ? [0, 0] : bpt >= 1 && bpt <= 5 ? (q.get("mode") === "wing" ? null : [bpt, bpt]) : null;   // TEST_BOTS "ct,t": test only   // a private room: today's map, no bots or 1-5 a side
-    if (q.get("mode") === "dc") room = createRoom(code, "Daily challenge #" + dcDay(), "dc", [0, 4], false, dcMap(), "hard");
-    else room = createRoom(code, title, ["comp", "gg", "wing"].includes(q.get("mode")) ? q.get("mode") : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal", q.get("frz") && FREEZES.includes(+q.get("frz")) ? +q.get("frz") : null); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
+    if (q.get("mode") === "dc") room = createRoom(code, "Daily challenge #" + dcDay(), "dc", q.get("team") === "t" ? [4, 0] : [0, 4], false, dcMap(), "hard");   // the bots take the other side
+    else room = createRoom(code, title, ["comp", "gg", "wing", "rt"].includes(q.get("mode")) ? q.get("mode") : "dm", bots, false, DAILY_LIST[dailyAt], DIFF[q.get("diff")] ? q.get("diff") : "normal", q.get("frz") && FREEZES.includes(+q.get("frz")) ? +q.get("frz") : null); rooms.set(code, room); log(`room ${code} "${title}" created by ${name}`);   // Deathmatch, or Competitive (2026-11-14)
   } else room = rooms.get((q.get("room") || "DAILY").toUpperCase());
   if (!room) { ws0.send(JSON.stringify({ t: "x", why: "No room with that code" })); ws0.close(4004, "no such room"); return; }
   room.join(ws, ws0, name, team, q.get("fin"));
@@ -1041,6 +1059,6 @@ wss.on("connection", (ws0, req) => {
 server.listen(PORT, "127.0.0.1", () => log(`listening on 127.0.0.1:${PORT}, ${TICK} tick, ${PER_TEAM} a side`));
 let next = performance.now();
 // a room nobody is in waits (no tick) until someone joins
-(function loop() { const now = performance.now(); let n = 0; while (now >= next && n < 8) { for (const r of rooms.values()) if (r.info().humans) r.step(); next += 1000 / TICK; n++; } if (now - next > 1000) next = now; setTimeout(loop, Math.max(0, next - performance.now())); })();
+(function loop() { const now = performance.now(); let n = 0; while (now >= next && n < 8) { for (const r of rooms.values()) if (r.humans()) r.step();   /* a count, not info(): info sorts the day's board, 64 times a second per room (2026-11-17) */ next += 1000 / TICK; n++; } if (now - next > 1000) next = now; setTimeout(loop, Math.max(0, next - performance.now())); })();
 
 process.on("uncaughtException", err => log("uncaught:", err && err.stack || err));   // one bad message must not take every room down

@@ -236,7 +236,7 @@ if (TOUCH) {
   document.addEventListener("visibilitychange", () => { if (document.hidden && locked) touchPlay(false); });
 }
 /* "locked" = playing with input captured: the mouse locked on a computer, the touch controls up on a phone */
-function setLocked(on) { $("play").textContent = connected ? "Resume" : "Play"; $("priv").hidden = connected; $("leave").hidden = !connected; $("unstuck").hidden = !connected; $("share").hidden = !(connected && currentRoom !== "DAILY"); if (!on) { for (const k in keys) keys[k] = false; rmb = false; mouseDown = false; for (const b of document.querySelectorAll(".tb.on,.tb.dn")) b.classList.remove("on", "dn"); } locked = on; if (locked && connected) $("load").textContent = ""; $("start").style.display = (locked && connected) || AUTO ? "none" : ""; if (!locked) mouseDown = false;  document.body.classList.toggle("playing", locked && connected); }
+function setLocked(on) { $("play").textContent = connected ? "Resume" : "Continue"; $("play").hidden = !ws; $("priv").hidden = !!ws; $("leave").hidden = !connected; $("unstuck").hidden = !connected; $("share").hidden = !(connected && currentRoom !== "DAILY"); if (!on) { for (const k in keys) keys[k] = false; rmb = false; mouseDown = false; for (const b of document.querySelectorAll(".tb.on,.tb.dn")) b.classList.remove("on", "dn"); } locked = on; if (locked && connected) $("load").textContent = ""; $("start").style.display = (locked && connected) || AUTO ? "none" : ""; if (!locked) mouseDown = false;  document.body.classList.toggle("playing", locked && connected); }
 document.addEventListener("pointerlockchange", () => { if (TOUCH) return; const on = document.pointerLockElement === renderer.domElement; if (!on && BUY.free && BUY.open) return; setLocked(on); });   // the buy menu frees the mouse without pausing
 
 /* ── sound ───────────────────────────────────────────────────────────────────── */
@@ -249,15 +249,20 @@ let AC = null, OUT = null, MG = null; function audio() { if (!AC) try { AC = new
 let SND = null, VERB = null; const dest = () => SND || OUT, ENV = { open: null, room: null, roomy: 0, next: 0 };
 /* sound takes time to arrive (343 m/s: a shot 100 m off is heard 0.3 s after it is seen) and the air dulls its top end
    with distance (2026-11-16) */
-function at(pos, fn) { if (!AC || !pos) return fn(); const rel = pos.clone().sub(camera.position), dist = rel.length() || 1; rel.y = 0; const d = rel.length() || 1, y = camera.rotation.y;
+/* a budget for placed sounds (2026-11-17): a fight with bots made dozens a second, each with its own HRTF panner (the
+   costliest kind), a wall ray and nodes kept 4.5 s. Now HRTF only for near sounds (six at most), cheap stereo for the
+   rest, far sounds dropped when many are playing, walls tested within 60 m, nodes freed when the sound is over */
+const AT = { live: 0, hrtf: 0 };
+function at(pos, fn) { if (!AC || !pos) return fn(); const rel = pos.clone().sub(camera.position), dist = rel.length() || 1;
+  if (AT.live > 28 && dist > 25) return; rel.y = 0; const d = rel.length() || 1, y = camera.rotation.y;
   const right = (rel.x * Math.cos(y) - rel.z * Math.sin(y)) / d, ahead = (-rel.x * Math.sin(y) - rel.z * Math.cos(y)) / d;
-  const pan = AC.createPanner(), lp = AC.createBiquadFilter(), wet = AC.createGain(); pan.panningModel = TOUCH ? "equalpower" : "HRTF"; pan.distanceModel = "linear"; pan.rolloffFactor = 0;
+  const pan = AC.createPanner(), lp = AC.createBiquadFilter(), wet = AC.createGain(), hrtf = !TOUCH && dist < 18 && AT.hrtf < 6; pan.panningModel = hrtf ? "HRTF" : "equalpower"; AT.live++; if (hrtf) AT.hrtf++; pan.distanceModel = "linear"; pan.rolloffFactor = 0;
   if (pan.positionX) { pan.positionX.value = right; pan.positionZ.value = -ahead; } else pan.setPosition(right, 0, -ahead);
-  const walled = W && dist > 1.5 && W.first(camera.position, pos.clone().sub(camera.position).normalize(), dist - .6);
+  const walled = W && dist > 1.5 && dist < 60 && W.first(camera.position, pos.clone().sub(camera.position).normalize(), dist - .6);
   lp.type = "lowpass"; lp.frequency.value = Math.min(walled ? 1300 : ahead >= 0 ? 20000 : 20000 - 9000 * Math.min(1, -ahead), 20000 / (1 + dist / 30));
   wet.gain.value = clamp(dist / 70, .05, .4) * (walled ? 1.4 : 1); pan.connect(lp).connect(OUT); lp.connect(wet); if (VERB) wet.connect(VERB);
   const late = dist > 6 ? AC.createDelay(1) : null; if (late) { late.delayTime.value = Math.min(.99, dist / 343); late.connect(pan); }
-  SND = late || pan; try { fn(); } finally { SND = null; } setTimeout(() => { try { if (late) late.disconnect(); pan.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 4500); }
+  SND = late || pan; try { fn(); } finally { SND = null; } setTimeout(() => { AT.live--; if (hrtf) AT.hrtf--; try { if (late) late.disconnect(); pan.disconnect(); lp.disconnect(); wet.disconnect(); } catch (e) {} }, 3200 + (late ? dist / .343 : 0)); }
 /* the surroundings (2026-11-16): nine rays from the listener (eight around, one up) say how enclosed it is, and the echo
    follows: a street or square answers a shot with a few late slaps off far walls, a room or corridor with a dense
    reverb. Probed a few times a second; the two tails cross-fade */
@@ -486,7 +491,7 @@ function itemPrice(it) { const P = PRICE[it === "molotov" && myTeam === 0 ? "inc
   if (P[1] != null && P[1] !== myTeam) return null; if (it === "vesthelm" && me.armor >= 100 && !me.helmet) return 350; return P[0]; }
 /* on a computer the menu frees the mouse, as CS does: the cursor shows, a click buys, the view holds still, and closing
    it captures the mouse again (2026-11-17: it was keyboard only). Moving with the keys still works while it is open. */
-function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && compLike(GM.m); BUY.cat = -1; drawBuy();
+function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && compLike(GM.m) && GM.m !== "rt"; BUY.cat = -1; drawBuy();
   if (TOUCH || was === BUY.open) return;
   if (BUY.open) { BUY.free = true; mouseDown = false; rmb = false; if (document.pointerLockElement) document.exitPointerLock(); }
   else if (BUY.free) { BUY.free = false; if (locked && connected && !document.pointerLockElement) relock(); } }
@@ -559,7 +564,7 @@ function syncComp(m) {
 let TMO = new Map();
 function beep(f = 2200, len = .06, vol = .35) { if (!AC) return; const t = AC.currentTime, o = AC.createOscillator(), g2 = AC.createGain(); o.frequency.value = f; g2.gain.setValueAtTime(vol, t); g2.gain.exponentialRampToValueAtTime(.001, t + len); o.connect(g2).connect(dest()); o.start(t); o.stop(t + len + .01); }
 function tickComp(dt) {
-  const comp = !!(GM && compLike(GM.m)); document.body.classList.toggle("comp", comp);
+  const comp = !!(GM && compLike(GM.m)); document.body.classList.toggle("comp", comp); document.body.classList.toggle("rt", !!(GM && GM.m === "rt"));
   if (!comp) { if (BUY.open) buyMenu(false); return; }
   // money, with what just came in or went out
   const mo = me.mo || 0; if (lastMo != null && mo !== lastMo) { $("modelta").textContent = (mo > lastMo ? "+$" : "-$") + Math.abs(mo - lastMo); $("modelta").className = mo > lastMo ? "up" : "dn"; moFlash = 1.6; } lastMo = mo;
@@ -785,7 +790,7 @@ async function onWelcome(m) {
     $("load").textContent = "Loading the map " + mapPct + "%"; W = await pm; mapLoadedFor = m.map; $("load").textContent = ""; }
   if (ws !== sock || !sock || sock.readyState !== 1) return;   // closed while loading: stay on the menu
   if (rejoined) { $("load").textContent = (rejoined === "lost" ? "Reconnected" : "New map: " + m.title) + ". Press Play to continue."; rejoined = false; }
-  connected = true; if (locked) { $("start").style.display = "none"; document.body.classList.add("playing"); } $("team").textContent = TEAM[myTeam]; $("team").className = myTeam ? "t" : "ct"; $("team").textContent = TEAM[myTeam];
+  connected = true; setLocked(locked); if (locked) { $("start").style.display = "none"; document.body.classList.add("playing"); } $("team").textContent = TEAM[myTeam]; $("team").className = myTeam ? "t" : "ct"; $("team").textContent = TEAM[myTeam];
   setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ t: "p", n: nowS() })), 1000);
 }
 function hpCell(x) {
@@ -797,7 +802,7 @@ function onRoster(r) {
   rosterRaw = r;
   roster.clear(); for (const [id, name, team, bot, k, d, p, a, dm, fin, gl] of r) roster.set(id, { id, name, team, bot, k, d, p, a: a || 0, dm: dm || 0, fin: FINISHES[fin] || "factory", gl });
   const rows = [...roster.values()].sort((a, b) => a.team - b.team || b.k - a.k);
-  $("board").innerHTML = (GM && GM.ph === "over" ? `<h3>${esc(GM.msg)}</h3>` : "") + `<table><tr><th>Atlas / Ember</th><th>HP</th><th>K</th><th>A</th><th>D</th><th>DMG</th>${GM && compLike(GM.m) ? "<th>$</th>" : ""}<th>ping</th></tr>` + rows.map(x => `<tr class="${x.team ? "t" : "ct"}${x.id === myId ? " me" : ""}"><td>${esc(x.name)}${x.bot ? " <small>bot</small>" : ""}</td><td>${hpCell(x)}</td><td>${x.k}</td><td>${x.a}</td><td>${x.d}</td><td>${x.dm}</td>${GM && compLike(GM.m) ? `<td>${x.team === myTeam && TMO.has(x.id) ? "$" + TMO.get(x.id) : ""}</td>` : ""}<td>${x.bot ? "" : x.p}</td></tr>`).join("") + "</table>";
+  $("board").innerHTML = (GM && GM.ph === "over" ? `<h3>${esc(GM.msg)}</h3>` : "") + `<table><tr><th>Atlas / Ember</th><th>HP</th><th>K</th><th>A</th><th>D</th><th>DMG</th>${GM && compLike(GM.m) && GM.m !== "rt" ? "<th>$</th>" : ""}${GM && GM.m === "gg" ? "<th>LVL</th>" : ""}<th>ping</th></tr>` + rows.map(x => `<tr class="${x.team ? "t" : "ct"}${x.id === myId ? " me" : ""}"><td>${esc(x.name)}${x.bot ? " <small>bot</small>" : ""}</td><td>${hpCell(x)}</td><td>${x.k}</td><td>${x.a}</td><td>${x.d}</td><td>${x.dm}</td>${GM && compLike(GM.m) && GM.m !== "rt" ? `<td>${x.team === myTeam && TMO.has(x.id) ? "$" + TMO.get(x.id) : ""}</td>` : ""}${GM && GM.m === "gg" ? `<td>${(x.gl || 0) + 1}</td>` : ""}<td>${x.bot ? "" : x.p}</td></tr>`).join("") + "</table>";
   lastBoard = rows;
   for (const o of others.values()) if (roster.get(o.id) && o.named !== roster.get(o.id).name) { o.model.g.remove(o.model.tag); dispose(o.model.tag); o.model.tag = label(roster.get(o.id).name, o.team ? "#ffd27a" : "#9cc6ff"); o.model.tag.position.y = 2.05; o.model.tag.userData.enemy = o.team !== myTeam; if (o.model.tag.userData.enemy) o.model.tag.material.depthTest = true; o.model.tag.userData.draw(o.hp ?? 100); o.model.g.add(o.model.tag); o.named = roster.get(o.id).name; }
 }
@@ -899,7 +904,7 @@ function onEvent(e) {
 /* ── the client's own ticks: input to a command, predicted at once, sent in batches ─ */
 let acc = 0, last = nowS(), outbox = [];
 function tickInput() {
-  const cmd = { seq: ++seq, f: (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s: (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), jump: !!keys.Space, duck: !!(SET.crouch === "ctrl" ? (keys.ControlLeft || keys.ControlRight) : keys.KeyC),
+  const cmd = { seq: ++seq, f: (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), s: (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), jump: !!keys.Space, duck: !!(keys.TouchDuck || (SET.crouch === "ctrl" ? (keys.ControlLeft || keys.ControlRight) : keys.KeyC)),   /* the phone button has its own key, whatever the keyboard uses (it toggled Ctrl after the switch to C, 2026-11-17) */
     walk: !!keys.ShiftLeft, fire: mouseDown && (locked || AUTO), reload: reloadQ, yaw: me.yaw, pitch: me.pitch, vt: +viewTime().toFixed(4),
     slot: slotQ, zoom: rmb && (locked || AUTO), use: !!keys.KeyE };
   if (GM && GM.fz) { cmd.f = cmd.s = 0; cmd.jump = cmd.fire = false; }
@@ -979,7 +984,7 @@ const SNDST = { last: "" }; let inspectT = 0;   // F: the weapon turned over in 
 /* spectating (2026-11-14): dead in a round mode, after the death cam, you watch a living teammate through their eyes;
    a click moves to the next one, as in CS */
 /* Gun Game (2026-11-17): the ladder from the server, your level from the roster (and the level events between) */
-const dmLike = m => m === "dm" || m === "gg", compLike = m => m === "comp" || m === "wing";
+const dmLike = m => m === "dm" || m === "gg", compLike = m => m === "comp" || m === "wing" || m === "rt";
 let LADDER = null; const myLevel = () => ((roster.get(myId) || {}).gl) || 0;
 const SPEC = { id: 0 };
 /* the killcam (2026-11-17): soon after you die, the last moments again through your killer's eyes, their gun, their shots
@@ -1096,9 +1101,9 @@ function render(dt) {
   if (connected && GM) {
     const mm = t => Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"), rounds = !dmLike(GM.m);
     if (!me.alive && !rounds && $("kcr")) { const left = Math.max(0, respawnIn); $("kcr").style.width = (100 * (1 - left / 3)).toFixed(1) + "%"; $("kcrt").textContent = left > .05 ? "Back in " + left.toFixed(1) + " s" : "Back in"; }
-    $("clock").textContent = GM.dc ? fmtT(GM.dc.el + GM.dc.d * GM.dc.pen) : GM.bp && GM.ph === "live" ? "BOMB" : mm(GM.tl); $("clock").classList.toggle("bomb", !!(GM.bp && GM.ph === "live")); $("sct").textContent = GM.sc[0]; $("st").textContent = GM.sc[1]; $("rnd").textContent = GM.dc ? "KILLS " + GM.dc.k + "/" + GM.dc.need : rounds ? "ROUND " + GM.rn : GM.m === "gg" && LADDER ? "LEVEL " + Math.min(myLevel() + 1, LADDER.length) + "/" + LADDER.length : "DM";
-    $("big").innerHTML = GM.ph === "over" ? `${esc(GM.msg)}<small>${GM.dc ? "your result is on the menu" : `next match in ${GM.tl} s`}</small>` : GM.ph === "end" ? `${esc(GM.msg)}` : GM.ph === "freeze" ? (GM.dc ? `${GM.dc.need} kills, fast<small>starts in ${GM.tl}</small>` : `Round ${GM.rn}<small>starts in ${GM.tl}</small>`) : ""; $("msg").classList.toggle("low", !!$("big").innerHTML);   // a round message above: the note steps down below it
-    $("board").style.display = GM.ph === "over" || keys.Tab ? "block" : "none";
+    $("clock").textContent = GM.dc ? fmtT(GM.dc.el + GM.dc.d * GM.dc.pen) : GM.bp && GM.ph === "live" ? (GM.bl > 0 ? "BOMB " + Math.ceil(GM.bl) : "BOMB") : mm(GM.tl); $("clock").classList.toggle("bomb", !!(GM.bp && GM.ph === "live")); $("sct").textContent = GM.sc[0]; $("st").textContent = GM.sc[1]; $("rnd").textContent = GM.dc ? "KILLS " + GM.dc.k + "/" + GM.dc.need : rounds ? "ROUND " + GM.rn : GM.m === "gg" && LADDER ? "LEVEL " + Math.min(myLevel() + 1, LADDER.length) + "/" + LADDER.length : "DM";
+    $("big").innerHTML = GM.ph === "over" ? `${esc(GM.msg)}<small>${GM.dc ? "your result is on the menu" : `next match in ${GM.tl} s`}</small>` : GM.ph === "end" ? `${esc(GM.msg)}` : GM.ph === "freeze" ? (GM.dc ? `${GM.dc.need} kills, fast<small>starts in ${GM.tl}</small>` : GM.rs ? `${myTeam ? "Hold" : "Retake"} ${esc(GM.rs)}<small>the bomb is down, starts in ${GM.tl}</small>` : `Round ${GM.rn}<small>starts in ${GM.tl}</small>`) : ""; $("msg").classList.toggle("low", !!$("big").innerHTML);   // a round message above: the note steps down below it
+    $("board").style.display = GM.ph === "over" || keys.Tab ? "block" : "none"; document.body.classList.toggle("boardon", $("board").style.display === "block"); if (TOUCH) document.body.classList.toggle("tpanel", !me.alive || $("board").style.display === "block" || BUY.open || CHAT.radio || VOTEON || !$("chatin").hidden);   // one writer for the phone panel state
     $("msg").innerHTML = !me.alive ? (rounds ? (GM.ph === "live" ? "You are dead<small>you play again next round</small>" : "") : "") : nowS() < roomNoteUntil ? `Room ${currentRoom}<small>${TOUCH ? "Pause" : "Esc"} for the invite link</small>` : protect > 0 ? `<small>spawn protection ${protect.toFixed(1)} s</small>` : "";
   }
   const gap = 3 + inaccuracy(me) / DEG * 3.2 + (pn - lastFire < 120 ? 3 : 0), len = 7, th = 2, [l, r, u, d] = $("xh").children;
@@ -1111,27 +1116,59 @@ function render(dt) {
   renderer.render(scene, camera);
 }
 
+/* HUD writes only when the value changes (2026-11-17): render() sets about twenty HUD texts every frame, and each write
+   makes the browser restyle even when the text is the same. These elements get a setter that skips an unchanged value. */
+{ const P = Object.getOwnPropertyDescriptor(Node.prototype, "textContent"), H = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+  const keep = (el, prop, d) => Object.defineProperty(el, prop, { configurable: true, get() { return d.get.call(this); }, set(v) { v = String(v); if (this["_" + prop] === v) return; this["_" + prop] = v; d.set.call(this, v); } });
+  for (const id of ["prompt", "wname", "tZoom", "tUse", "tKnife", "st", "sct", "rnd", "rldp", "res", "ping", "mag", "hpv", "clock", "arv", "dbg"]) if ($(id)) keep($(id), "textContent", P);
+  for (const id of ["spec", "nades", "msg", "big"]) if ($(id)) keep($(id), "innerHTML", H); }
 /* ── boot ────────────────────────────────────────────────────────────────────── */
 const saved = (() => { try { return localStorage.getItem("fps-name"); } catch (e) { return null; } })();
 $("name").value = params.get("name") || saved || "";   // empty shows the placeholder; Play picks a name if none is typed
 let team = "auto", room = (params.get("room") || "DAILY").toUpperCase(), withBots = true;
-$("teams").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; team = b.dataset.team; for (const x of $("teams").children) x.classList.toggle("on", x === b); });
-let gameMode = "dm", botDiff = "normal";
-const DIFFS = ["easy", "normal", "hard", "expert"];   // one button that steps through them, as compact as the menu needs
-$("bdiff").addEventListener("click", () => { botDiff = DIFFS[(DIFFS.indexOf(botDiff) + 1) % DIFFS.length]; $("bdiff").textContent = botDiff[0].toUpperCase() + botDiff.slice(1); });   // Deathmatch or Competitive, for a room you create (2026-11-14)
-$("gmode").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; gameMode = b.dataset.m;
-  for (const x of $("gmode").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } $("frz").hidden = !compLike(gameMode); $("botn").classList.toggle("off", !withBots || gameMode === "wing"); });
-$("bots").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; withBots = b.dataset.b === "1"; $("botn").classList.toggle("off", !withBots || gameMode === "wing"); $("bdiff").classList.toggle("off", !withBots);
-  for (const x of $("bots").children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); } });
-document.querySelector(".priv .tabs").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return;
-  for (const x of b.parentNode.children) { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); $(x.dataset.tab).hidden = x !== b; }
-  if (b.dataset.tab === "jn") $("code").focus(); });
-let botN = 3; const setBots = n => { botN = Math.max(1, Math.min(5, n)); $("botv").textContent = botN; const [dn, up] = $("botn").querySelectorAll("button"); dn.disabled = botN <= 1; up.disabled = botN >= 5; };
+/* the menu (2026-11-17, operator: "one flow, as CS"): a card per mode opens its setup popup with just the settings that
+   mode has (side for all; bots, their skill and freeze time where they apply) and one button that starts it */
+let gameMode = "dm", botDiff = "normal", botN = 3, frzS = 5, dcInfo = null;
+const FRZ = [0, 3, 5, 8, 10, 15];
+const MODEINFO = {
+  public: { t: "Today's match", d: "Deathmatch on today's map with everyone who is online. Respawn, play as long as you like.", go: "Join the match", rows: [] },
+  comp: { t: "Competitive", d: "5 v 5 with the bomb and money, as CS: first to 9 rounds, sides swap at halftime.", go: "Create room", rows: ["bots", "botn", "diff", "frz"] },
+  wing: { t: "Wingman", d: "2 v 2 on one bomb site, 1:30 rounds, first to 9. Bots fill the empty places.", go: "Create room", rows: ["bots", "diff", "frz"] },
+  gg: { t: "Gun Game", d: "Every kill hands you the next of 13 guns; the knife is last. A knife kill also takes a level off the victim.", go: "Create room", rows: ["bots", "botn", "diff"] },
+  rt: { t: "Retakes", d: "Every round starts with the bomb planted on a site. Ember hold it, Atlas retake it and defuse before it blows. Set loadouts, no buying; first to 8.", go: "Create room", rows: ["bots", "botn", "diff", "frz"] },
+  dm: { t: "Deathmatch", d: "Your own room on today's map. Share the invite link with friends.", go: "Create room", rows: ["bots", "botn", "diff"] },
+  dc: { t: "Daily challenge", d: "Alone against four hard bots on the day's challenge map: 8 kills as fast as you can, each death adds 10 s. Your first finished run each day counts.", go: "Start the challenge", rows: [] },
+  join: { t: "Join a room", d: "", go: "Join", rows: [] }
+};
+const seg = (id, attr, val) => { for (const x of $(id).children) { const on = x.dataset[attr] === val; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); } };
+const setBots = n => { botN = Math.max(1, Math.min(5, n)); $("botv").textContent = botN; const [dn, up] = $("botn").querySelectorAll("button"); dn.disabled = botN <= 1; up.disabled = botN >= 5; };
+const setFrz = v => { frzS = v; $("frzv").textContent = v; const [dn, up] = $("frz").querySelectorAll("button"); dn.disabled = v <= FRZ[0]; up.disabled = v >= FRZ[FRZ.length - 1]; };
+function msRows() { const r = MODEINFO[gameMode].rows; for (const [k, id] of [["bots", "msBots"], ["botn", "msBotn"], ["diff", "msDiff"], ["frz", "msFrz"]]) $(id).hidden = !r.includes(k) || (k !== "bots" && k !== "frz" && !withBots); }
+function msOpen(mode, note = "") {
+  gameMode = mode; const M = MODEINFO[mode]; $("msTitle").textContent = M.t; $("msDesc").textContent = mode === "join" ? `Room ${joinCode}` : M.d; $("msGo").textContent = M.go; $("msNote").textContent = note;
+  if (mode === "dc") fetch("challenge", { cache: "no-store" }).then(x => x.json()).then(r => { dcInfo = r; if (gameMode === "dc" && !note) $("msNote").textContent = `#${r.day} on ${r.map}${r.top && r.top[0] ? `. Fastest today: ${r.top[0].name}, ${fmtT(r.top[0].t)}` : ""}`; }).catch(() => {});
+  msRows(); $("msetup").hidden = false; $("msGo").focus();
+}
+const msClose = () => { $("msetup").hidden = true; };
+$("mgrid").addEventListener("click", ev => { const b = ev.target.closest(".mcard"); if (b) msOpen(b.dataset.m); });
+$("msBack").addEventListener("click", msClose);
+$("msetup").addEventListener("click", ev => { if (ev.target === $("msetup")) msClose(); });
+$("msetup").addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Escape") msClose(); });
+$("teams").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { team = b.dataset.team; seg("teams", "team", team); } });
+$("bots").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { withBots = b.dataset.b === "1"; seg("bots", "b", b.dataset.b); msRows(); } });
+$("bdiff").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { botDiff = b.dataset.d; seg("bdiff", "d", botDiff); } });
 $("botn").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) setBots(botN + +b.dataset.d); }); setBots(3);
-/* Competitive's freeze time, the creator's pick (2026-11-17): 5 s unless changed; the server takes only these values */
-const FRZ = [0, 3, 5, 8, 10, 15]; let frzS = 5; const setFrz = v => { frzS = v; $("frzv").textContent = v; const [dn, up] = $("frz").querySelectorAll("button"); dn.disabled = v <= FRZ[0]; up.disabled = v >= FRZ[FRZ.length - 1]; };
 $("frz").addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) setFrz(FRZ[Math.max(0, Math.min(FRZ.length - 1, FRZ.indexOf(frzS) + +b.dataset.d))]); }); setFrz(5);
-const showJoin = () => document.querySelector('.priv .tabs [data-tab="jn"]').click();
+let joinCode = "";
+$("msGo").addEventListener("click", () => {
+  const nm = ($("name").value.trim() || "player") + "'s room";
+  if (gameMode === "public") { msClose(); return start({ room: "DAILY" }); }
+  if (gameMode === "join") { msClose(); return start({ room: joinCode }); }
+  if (gameMode === "dc") {   // the page holds one map: if another is loaded, reload with the challenge's first, then Start again
+    if (dcInfo && preload && preload.id !== dcInfo.id) { try { const n = $("name").value.trim().slice(0, 16); if (n) localStorage.setItem("fps-name", n); sessionStorage.setItem("dcqueue", JSON.stringify({ map: dcInfo.id, team, t: Date.now() })); } catch (e) {} location.reload(); return; }
+    DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {} if (dcInfo) getMap(dcInfo.id); msClose(); return start({ create: "1", mode: "dc", title: "Daily challenge" }); }
+  msClose(); start({ create: "1", mode: gameMode, frz: frzS, diff: botDiff, bots: withBots ? "1" : "0", bpt: botN, title: nm });
+});
 /* today's map: its picture behind the menu, its name, the next one and when */
 const span = t => t >= 3600 ? Math.floor(t / 3600) + " h " + Math.floor(t % 3600 / 60) + " min" : Math.max(1, Math.floor(t / 60)) + " min";
 async function loadToday() {
@@ -1177,12 +1214,9 @@ async function loadDc() {
        ${r.me ? `<small class="dcrule">Your time today: <b>${fmtT(r.me.t)}</b>. Another run is practice.</small>` : ""}
        <button type="button" class="dcgo" id="dcgo">${r.me ? "Practice run" : "Start the challenge"}</button>`)
     + `<span class="eyebrow">Today's fastest${r.players ? `, ${r.players} played` : ""}</span><ol>${(r.top || []).map((t, i) => `<li><i>${i + 1}</i><b>${esc(t.name)}</b><span>${fmtT(t.t)}</span><span>${t.d}<small>D</small></span></li>`).join("") || `<li class="none">Nobody yet. Be the first</li>`}</ol>`;
-  // the page holds one map; the challenge has its own each day, so if another is loaded the page reloads with the
-  // challenge's map first and Play then starts the run (its countdown begins on joining, 2026-11-17)
-  const go = () => { DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {}
-    if (preload && preload.id !== r.id) { try { const n = $("name").value.trim().slice(0, 16); if (n) localStorage.setItem("fps-name", n); sessionStorage.setItem("dcqueue", JSON.stringify({ map: r.id, t: Date.now() })); } catch (e) {} location.reload(); return; }
-    getMap(r.id); start({ create: "1", mode: "dc", title: "Daily challenge" }); };
-  if ($("dcgo")) $("dcgo").addEventListener("click", go); if ($("dcagain")) $("dcagain").addEventListener("click", go);
+  // Start and Again go through the mode popup like every other game (it reloads first if the challenge map is not loaded)
+  const viaMenu = () => { DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {} dcInfo = r; msOpen("dc"); };
+  if ($("dcgo")) $("dcgo").addEventListener("click", viaMenu); if ($("dcagain")) $("dcagain").addEventListener("click", viaMenu);
   if ($("dcshare")) $("dcshare").addEventListener("click", async () => { const text = dcShareText(res);
     try { if (TOUCH && navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
     let ok = false; try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {} $("dcsharehint").textContent = ok ? "Copied. Paste it in your group" : text; });
@@ -1211,8 +1245,8 @@ function start(q) {
   $("load").textContent = "connecting"; audio(); connect({ name: n, team, fin: SET.fin, ...q }); if (!AUTO && !q.quiet) lockMouse();
 }
 let DCQ = (() => { try { const q = JSON.parse(sessionStorage.getItem("dcqueue") || "null"); sessionStorage.removeItem("dcqueue"); return q && Date.now() - q.t < 60000 ? q : null; } catch (e) { return null; } })();
-if (DCQ) { getMap(DCQ.map); $("load").textContent = "Daily challenge ready. Press Play to start"; $("play").textContent = "Start challenge"; }
-$("play").addEventListener("click", () => { if (DCQ && !ws) { DCQ = null; start({ create: "1", mode: "dc", title: "Daily challenge" }); return; } start({ room }); });
+if (DCQ) { getMap(DCQ.map); team = DCQ.team || team; seg("teams", "team", team); dcInfo = { id: DCQ.map }; setTimeout(() => msOpen("dc", "The challenge map is loaded. Start when you are ready"), 0); }
+$("play").addEventListener("click", () => start({ room }));   // Resume (or continue after a reconnect); new games start from the mode cards
 /* unstuck: respawn now (a self-kill; the server allows one every 10 s) - K, or the pause menu's button */
 function unstuck() { if (ws && ws.readyState === 1 && connected && me.alive) ws.send(JSON.stringify({ t: "u" })); }
 $("unstuck").addEventListener("click", () => { unstuck(); lockMouse(); });
@@ -1221,12 +1255,13 @@ $("leave").addEventListener("click", () => { movingTo = "leave"; try { sessionSt
 const invite = () => location.origin + location.pathname + "?room=" + currentRoom;
 $("copylink").addEventListener("click", async () => { let ok = false; try { await navigator.clipboard.writeText(invite()); ok = true; } catch (e) {}
   $("sharehint").textContent = ok ? "Copied. Send it to your friends" : invite(); });
-if (room !== "DAILY" && !AUTO) { showJoin(); $("code").value = room; $("load").textContent = "Invited to room " + room + ". Press Play to join"; }
-$("create").addEventListener("click", () => start({ create: "1", mode: gameMode, frz: frzS, diff: botDiff, bots: withBots ? "1" : "0", bpt: botN, title: ($("name").value.trim() || "player") + "'s room" }));
-$("joincode").addEventListener("click", () => { const c = $("code").value.trim().toUpperCase(); if (c.length !== 4) { $("load").textContent = "A room code is 4 letters"; return; } start({ room: c }); });
-for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter") (id === "code" ? $("joincode") : $("play")).click(); });
+const openJoin = c => { joinCode = c; msOpen("join", "Pick your side, then join"); };
+$("joincode").addEventListener("click", () => { const c = $("code").value.trim().toUpperCase(); if (!/^[A-Z]{4}$/.test(c)) { $("load").textContent = "A room code is 4 letters"; return; } openJoin(c); });
+for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter" && id === "code") $("joincode").click(); });
+let rejoining = false;
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
-  if (rj && Date.now() - rj.t < 30000) { if (rj.map) getMap(rj.map);   /* the map this room needs, before today's takes the one slot (2026-11-17) */ team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
+  if (rj && Date.now() - rj.t < 30000) { if (rj.map) getMap(rj.map);   /* the map this room needs, before today's takes the one slot (2026-11-17) */ team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; rejoining = true; start({ room, quiet: 1 }); } }
+if (room !== "DAILY" && !AUTO && !rejoining) { $("code").value = room; openJoin(room); }   // an invite link opens its join popup
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", frz: params.get("frz") || "", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
-if (AUTO || DEBUG) window.__g = { lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
+if (AUTO || DEBUG) window.__g = { cam: () => +camera.position.y.toFixed(3), lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);

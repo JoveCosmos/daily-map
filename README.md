@@ -15,8 +15,13 @@ No install: open a link and play, on desktop or phone.
   chest, stomach, arm and leg zones, CS armour and helmets, burst fire on the Glock and FAMAS.
 - **Grenades:** HE, flashbang, smoke, molotov and decoy, thrown, lobbed or bounced with real physics. Smoke blocks sight
   (for bots and for what the server sends), fire burns for 7 seconds and smoke puts it out.
-- **Two modes:** Deathmatch, and Competitive: CS's short match with money, a buy menu, two bomb sites placed on every
-  map automatically, the C4 planted and defused, round pay, halftime, spectating teammates after death, and votes.
+- **Modes:** Deathmatch (the public room on today's map, or your own), Competitive (CS's short match with money, a buy
+  menu, two bomb sites placed on every map automatically, the C4 planted and defused, round pay, halftime, spectating
+  teammates after death, and votes), Wingman (2 v 2 on one site), Retakes (the bomb already down: hold the site or retake
+  it), Gun Game (every kill hands you the next gun) and a daily challenge (8 kills against bots, fastest time wins, share
+  your result). Each starts from its card in the menu, set up in one popup: your side, bots, their skill, freeze time.
+- **Watching it back:** a killcam through your killer's eyes, the round's best play replayed for everyone, damage numbers
+  and a headshot sound, smoke lineups on every site, and lifetime stats per player name.
 - **Movement:** Source-style running, air strafing and crouching, CS's landing slowdown, bunny hops and crouch-jumps.
 - **Generated worlds:** maps made with Tencent HY-World, turned into a playable map (collision, phone version, spawns,
   bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room rotates through `maps/rotation.json`.
