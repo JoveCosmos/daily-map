@@ -16,8 +16,10 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **`game.js` is the client.** It predicts the local player by running `sim.js` on its own inputs, corrects itself when a
   snapshot disagrees (replaying the commands the server has not acknowledged yet), and draws everyone else
   interpolated about 100 ms in the past. It also does rendering, sound, the HUD, the menu, settings and touch controls.
-- **Modes, grenades and the bomb are the server's alone.** Deathmatch and Competitive (money, buying, the C4, rounds,
-  halftime, votes) live in `server.js`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
+- **Modes, grenades and the bomb are the server's alone.** Deathmatch, Competitive (money, buying, the C4, rounds,
+  halftime, votes), Wingman (Competitive two a side on one site, `MODES.wing`), Gun Game (`LADDER`, `ggKit`, `ggLevel`;
+  no pickups or drops) and the daily challenge (`MODES.dc`, solo against four bots) live in `server.js`; `DMLIKE` and
+  `COMP` group them, and `game.js` mirrors that with `dmLike()` and `compLike()`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
   lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `game.js`: change
   both.
 - **`models.js`** builds the soldiers and guns procedurally; most guns are a close relative's model with the parts that
@@ -29,6 +31,15 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   menu and all CSS.
 - **The map switch is temporary.** An arrow by the menu's "Next:" moves the public room on now (`/skipmap`,
   `MAP_SKIP` in server.js, on by default for testing, `MAP_SKIP=0` turns it off); remove it when testing is done.
+- **Replays come from the server's record.** Every snapshot tick the server keeps each player's position, view, weapon
+  and shots for 10 s (`record`, `e.hist`). A death sends the victim a short record (`sendKillcam`, message `kc`); a round's
+  end sends everyone its best moment (`pickHighlight`, message `hl`). Only the dead or the finished round see it, so it
+  gives the living nothing. The client plays both through one player (`KC`, `kcCamera`, `kcBodies` in game.js).
+- **What is kept on disk** sits next to `boards.json` (or in `$STATE_DIRECTORY`): `stats.json` (lifetime numbers per
+  player name, `/stats?name=`) and `challenge.json` (the daily challenge's runs, the last 30 days, `/challenge`). Names
+  are free text, there are no accounts. None of these files belong in git.
+- **Smoke lineups** are found by the server once per map (`lineups()`): it throws smokes from the attackers' route with the
+  real grenade physics (`botAim`) and keeps two per site that land on it. Clients only draw them (`setLineups`).
 - **Sound** is in game.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
   Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
   distance and sends it to the echo; `probeEnv` sets the echo from how enclosed the listener is.
@@ -81,6 +92,15 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   (`bakeSkins`), and a gun model returns inside a holder group because callers set its scale.
 - **A sound recorded in a room carries the room.** Cut foley tight and dry (high-pass, the boom cut, the tail gated):
   the game adds the echo of where the player stands, and a second one baked into the clip sounds like a basement.
+- **The page holds one map.** `getMap` keeps a single preload; a room on another map reloads the page with that map
+  first (the rejoin note carries `map`). The daily challenge has its own map each day, so its Start reloads before Play
+  (`dcqueue`). Without this, joining looped forever.
+- **Leaving a page writes a rejoin note** that lasts 30 s: a test that opens another page right after lands back in the
+  old room. Clear `sessionStorage` between test pages.
+- **`?autoplay` never shows the phone's touch layer** (it only runs while playing for real), so taps there do nothing in
+  that mode. Test phones by tapping through the menu like a player.
+- **A message's `t` is its type.** A field called `t` in the same object overwrites it and the client drops the message
+  (the challenge result did this once).
 - **Headless test browsers join the game.** A test that is killed by a timeout can leave its browser running and
   connected as a phantom player. Close test browsers explicitly.
 
@@ -99,7 +119,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   `BOMB_TO=<name>` (who carries the bomb), `TEST_PLANT=1` (a bomb already on A), `TEST_BOTS=ct,t` (bots per side),
   `DEBUG_COMP=1` (logs the carrier). In a browser, `?autoplay&debug` exposes `window.__g`; `__g.corr()` is the largest
   prediction correction seen, which should stay at 0 without other players.
-- Test-only server settings (never in production): `FAKE_LAG_MS`, `DM_TIME`, `ROUND_TIME`, `TO_WIN`, `SPAWN_AT=<weapon>`,
+- Test-only server settings (never in production): `FAKE_LAG_MS`, `DM_TIME`, `GG_TIME` (Gun Game's clock), `DC_KILLS`
+  (kills to finish the daily challenge), `ROUND_TIME`, `TO_WIN`, `SPAWN_AT=<weapon>`,
   `DEBUG_BOTS=1` (logs what bots decide every 30 s; an empty room pauses, so keep a client connected).
 - Hit registration, the measured way: `PER_TEAM=0 ROTATION=standin DUEL=1 NO_DEATH=1 FAKE_LAG_MS=150 node server.js`,
   then `node nettest.mjs ws://127.0.0.1:<port>/ws 30`, again with `NO_REWIND=1` to compare (2026-11-16: 96% against 11%).
