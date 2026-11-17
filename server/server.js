@@ -1003,7 +1003,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(ok ? 200 : 429, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ ok })); return; }
   if (p === "/challenge") { const nm = (new URL(req.url, "http://x").searchParams.get("name") || "").toLowerCase(), day = dcDay(), id = dcMap();
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    res.end(JSON.stringify({ day, map: MAPS[id].name.replace(/, HY-World$/, ""), preview: "maps/" + id + "-preview.jpg", kills: MODES.dc.kills, penalty: MODES.dc.penalty, top: dcTop(day, 8), me: nm && DCR[day] && DCR[day][nm] || null, players: Object.keys(DCR[day] || {}).length })); return; }
+    res.end(JSON.stringify({ day, id, map: MAPS[id].name.replace(/, HY-World$/, ""), preview: "maps/" + id + "-preview.jpg", kills: MODES.dc.kills, penalty: MODES.dc.penalty, top: dcTop(day, 8), me: nm && DCR[day] && DCR[day][nm] || null, players: Object.keys(DCR[day] || {}).length })); return; }
   if (p === "/stats") { const nm = new URL(req.url, "http://x").searchParams.get("name") || "", st = STATS[nm.toLowerCase()];
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify({ me: st ? statView(st) : null, top: Object.values(STATS).sort((a, b) => b.k - a.k).slice(0, 8).filter(x => x.k > 0).map(x => ({ name: x.n, k: x.k, kd: +(x.k / Math.max(1, x.d)).toFixed(2), hs: x.k ? Math.round(100 * x.hs / x.k) : 0 })) })); return; }

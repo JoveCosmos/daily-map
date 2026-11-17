@@ -781,7 +781,7 @@ async function onWelcome(m) {
   $("roomtag").textContent = m.room === "DAILY" ? m.title.toUpperCase() : "ROOM " + m.room; $("rcode").textContent = m.room;
   if (m.room !== "DAILY") { roomNoteUntil = nowS() + 8; if (!locked) $("share").hidden = false; } history.replaceState(null, "", m.room === "DAILY" ? "./" : "?room=" + m.room);
   if (mapLoadedFor !== m.map) { const pm = getMap(m.map);
-    if (!pm) { try { sessionStorage.setItem("rejoin", JSON.stringify({ room: currentRoom, team, t: Date.now(), lost: 1 })); } catch (e) {} location.reload(); return; }
+    if (!pm) { try { sessionStorage.setItem("rejoin", JSON.stringify({ room: currentRoom, team, t: Date.now(), lost: 1, map: m.map })); } catch (e) {} location.reload(); return; }
     $("load").textContent = "Loading the map " + mapPct + "%"; W = await pm; mapLoadedFor = m.map; $("load").textContent = ""; }
   if (ws !== sock || !sock || sock.readyState !== 1) return;   // closed while loading: stay on the menu
   if (rejoined) { $("load").textContent = (rejoined === "lost" ? "Reconnected" : "New map: " + m.title) + ". Press Play to continue."; rejoined = false; }
@@ -1177,7 +1177,11 @@ async function loadDc() {
        ${r.me ? `<small class="dcrule">Your time today: <b>${fmtT(r.me.t)}</b>. Another run is practice.</small>` : ""}
        <button type="button" class="dcgo" id="dcgo">${r.me ? "Practice run" : "Start the challenge"}</button>`)
     + `<span class="eyebrow">Today's fastest${r.players ? `, ${r.players} played` : ""}</span><ol>${(r.top || []).map((t, i) => `<li><i>${i + 1}</i><b>${esc(t.name)}</b><span>${fmtT(t.t)}</span><span>${t.d}<small>D</small></span></li>`).join("") || `<li class="none">Nobody yet. Be the first</li>`}</ol>`;
-  const go = () => { DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {} start({ create: "1", mode: "dc", title: "Daily challenge" }); };
+  // the page holds one map; the challenge has its own each day, so if another is loaded the page reloads with the
+  // challenge's map first and Play then starts the run (its countdown begins on joining, 2026-11-17)
+  const go = () => { DCRES = null; try { sessionStorage.removeItem("dcres"); } catch (e) {}
+    if (preload && preload.id !== r.id) { try { const n = $("name").value.trim().slice(0, 16); if (n) localStorage.setItem("fps-name", n); sessionStorage.setItem("dcqueue", JSON.stringify({ map: r.id, t: Date.now() })); } catch (e) {} location.reload(); return; }
+    getMap(r.id); start({ create: "1", mode: "dc", title: "Daily challenge" }); };
   if ($("dcgo")) $("dcgo").addEventListener("click", go); if ($("dcagain")) $("dcagain").addEventListener("click", go);
   if ($("dcshare")) $("dcshare").addEventListener("click", async () => { const text = dcShareText(res);
     try { if (TOUCH && navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
@@ -1206,7 +1210,9 @@ function start(q) {
   if (ws) { if (connected) { audio(); lockMouse(); } return; }
   $("load").textContent = "connecting"; audio(); connect({ name: n, team, fin: SET.fin, ...q }); if (!AUTO && !q.quiet) lockMouse();
 }
-$("play").addEventListener("click", () => start({ room }));
+let DCQ = (() => { try { const q = JSON.parse(sessionStorage.getItem("dcqueue") || "null"); sessionStorage.removeItem("dcqueue"); return q && Date.now() - q.t < 60000 ? q : null; } catch (e) { return null; } })();
+if (DCQ) { getMap(DCQ.map); $("load").textContent = "Daily challenge ready. Press Play to start"; $("play").textContent = "Start challenge"; }
+$("play").addEventListener("click", () => { if (DCQ && !ws) { DCQ = null; start({ create: "1", mode: "dc", title: "Daily challenge" }); return; } start({ room }); });
 /* unstuck: respawn now (a self-kill; the server allows one every 10 s) - K, or the pause menu's button */
 function unstuck() { if (ws && ws.readyState === 1 && connected && me.alive) ws.send(JSON.stringify({ t: "u" })); }
 $("unstuck").addEventListener("click", () => { unstuck(); lockMouse(); });
@@ -1220,7 +1226,7 @@ $("create").addEventListener("click", () => start({ create: "1", mode: gameMode,
 $("joincode").addEventListener("click", () => { const c = $("code").value.trim().toUpperCase(); if (c.length !== 4) { $("load").textContent = "A room code is 4 letters"; return; } start({ room: c }); });
 for (const id of ["name", "code"]) $(id).addEventListener("keydown", ev => { ev.stopPropagation(); if (ev.key === "Enter") (id === "code" ? $("joincode") : $("play")).click(); });
 { let rj = null; try { rj = JSON.parse(sessionStorage.getItem("rejoin") || "null"); sessionStorage.removeItem("rejoin"); } catch (e) {}
-  if (rj && Date.now() - rj.t < 30000) { team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
+  if (rj && Date.now() - rj.t < 30000) { if (rj.map) getMap(rj.map);   /* the map this room needs, before today's takes the one slot (2026-11-17) */ team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; start({ room, quiet: 1 }); } }
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", frz: params.get("frz") || "", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
 if (AUTO || DEBUG) window.__g = { lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);
