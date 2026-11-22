@@ -4,6 +4,7 @@
    real (metres); a gun's origin is its grip, forward is -Z. */
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 
 const M = (color, roughness = .7, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const TEX = {}, rnd = (() => { let a = 7; return () => ((a = Math.imul(a ^ a >>> 15, 2654435761) + 1013904223 | 0) >>> 0) / 4294967296; })();
@@ -89,23 +90,30 @@ function box(sx, sy, sz, mat, fwd, up, x = 0) { const m = new THREE.Mesh(new Rou
 export const MUZZLE = { knife: .22, ak: .8, m4: .74, aug: .58, awp: 1.04, glock: .19, usp: .33, deagle: .25, mp9: .34, mac10: .22, nova: .82, he: .05, flash: .05, smoke: .05, molotov: .1, c4: .1,
   p250: .19, cz75: .19, fiveseven: .19, tec9: .3, mp7: .36, ump: .3, p90: .32, galil: .8, famas: .62, m4a1s: .95, sg553: .62, ssg08: .9, xm1014: .82, negev: .95, zeus: .1, decoy: .05 };
 /* the rest of the arsenal (2026-11-14): each built on the nearest gun above, with the parts that tell it apart */
-const VARIANT = { p250: "glock", cz75: "glock", fiveseven: "glock", tec9: "mac10", mp7: "mp9", ump: "mac10", galil: "ak", famas: "aug", m4a1s: "m4", sg553: "aug", ssg08: "awp", xm1014: "nova", negev: "m4" };
+const VARIANT = { p250: "glock", cz75: "glock", fiveseven: "glock", tec9: "mac10", mp7: "mp9", ump: "mac10", galil: "ak", famas: "aug", m4a1s: "m4", sg553: "aug", ssg08: "awp", xm1014: "nova", negev: "m4", p90: "mp9" };
 function variant(w, g) {
   const add = m => g.add(m);
+  // the base may be a Hunyuan 3D gun now, not the code one these parts were sized on: parts that sit on its outside are placed
+  // from its own bounds (front, back, top) so nothing floats off it (2026-11-22)
+  const bb = new THREE.Box3().setFromObject(g), front = -bb.min.z, back = -bb.max.z, top = bb.max.y;
+  const tipY = (() => { let lo = Infinity, hi = -Infinity; const v = new THREE.Vector3(); g.updateMatrixWorld(true);
+    g.traverse(o => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); if (v.z < bb.min.z + .03) { lo = Math.min(lo, v.y); hi = Math.max(hi, v.y); } } });
+    return lo < hi ? (lo + hi) / 2 : .034; })();   // the muzzle's height
   if (w === "p250") add(box(.03, .036, .19, MAT.steel, .005, .04));                                   // a bright steel slide
   else if (w === "fiveseven") add(box(.03, .036, .19, MAT.olive, .005, .04));                         // the sand-coloured slide
-  else if (w === "cz75") { add(box(.03, .036, .19, MAT.gunmetal, .005, .04)); add(profile([[-.085, -.1], [-.035, -.1], [-.04, -.15], [-.088, -.15]], .026, MAT.black)); }   // longer magazine
+  else if (w === "cz75") add(box(.03, .036, .19, MAT.gunmetal, .005, .04));
   else if (w === "tec9") { add(tube(.008, .12, MAT.steel, .25, .035)); g.scale.set(.85, .85, .85); }   // long thin barrel, small frame
-  else if (w === "mp7") { add(box(.014, .014, .16, MAT.black, .06, .095)); add(box(.012, .05, .012, MAT.black, -.3, .02)); }
-  else if (w === "ump") { add(box(.045, .05, .22, MAT.black, -.2, .02)); g.scale.set(1.2, 1.15, 1.15); }   // a full stock, a bigger box
+  else if (w === "mp7") add(box(.03, .012, .12, MAT.black, (front + back) / 2 + .02, top + .004));   // a rail on top
+  else if (w === "ump") { add(box(.045, .05, .22, MAT.black, back - .1, .02)); g.scale.set(1.2, 1.15, 1.15); }   // a full stock, a bigger box
   else if (w === "galil") add(profile([[.26, .0], [.46, .006], [.465, .058], [.26, .066]], .054, MAT.black));   // black handguard over the wood
   else if (w === "famas") { add(box(.02, .03, .3, MAT.black, .05, .13)); add(box(.012, .05, .012, MAT.black, -.07, .1)); add(box(.012, .05, .012, MAT.black, .17, .1)); }   // the carry handle
-  else if (w === "m4a1s") { add(tube(.02, .2, MAT.black, .84, .034)); }                                // the suppressor
+  else if (w === "m4a1s") { add(tube(.02, .2, MAT.black, front + .08, tipY)); }                                // the suppressor
   else if (w === "sg553") { add(tube(.022, .18, MAT.black, .05, .14)); add(tube(.026, .002, MAT.glass, .14, .14)); }   // its scope
+  else if (w === "p90") { add(box(.05, .028, .24, MAT.glass, (front + back) / 2 + .03, top + .01)); }   // the clear top magazine and the bullpup butt (2026-11-22: the P90 had no model and was invisible)
   else if (w === "ssg08") g.scale.set(.86, .82, .82);                                                   // a lighter bolt gun than the AWP
   else if (w === "xm1014") { add(profile([[.3, -.01], [.5, -.01], [.5, .04], [.3, .04]], .042, MAT.black)); add(box(.02, .03, .32, MAT.gunmetal, .45, .075)); }   // black fore-end, heat shield
-  else if (w === "negev") { add(box(.07, .1, .12, MAT.olive, .14, -.06)); add(tube(.011, .3, MAT.steel, .86, .034));
-    for (const x of [-.03, .03]) { const l = tube(.006, .16, MAT.black, .55, -.06); l.rotation.set(0, 0, x > 0 ? .5 : -.5); l.position.x = x; add(l); } }   // box magazine, long barrel, bipod
+  else if (w === "negev") { add(box(.07, .1, .12, MAT.olive, .14, -.06)); add(tube(.011, .3, MAT.steel, front + .13, tipY));
+    for (const x of [-1, 1]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, .16, 6), MAT.black); l.position.set(x * .03, tipY - .08, -(front - .05)); l.rotation.z = x * .35; l.castShadow = true; add(l); } }   // bipod legs, standing down from the barrel   // box magazine, long barrel, bipod
   return g;
 }
 /* imported guns (2026-11-16): CC0 models (MODELS.md) for the guns they match, painted in our own materials so finishes
@@ -113,23 +121,57 @@ function variant(w, g) {
    flash and the tracer all stay where they were. Until they load, or if one fails, the code-built gun is used. rot turns
    the file's forward into ours (-Z); mats names each material slot of the file */
 const IMPORTED = {
-  ak: { file: "ak47.glb", rot: -Math.PI / 2, mats: { "Material": "gunmetal", "Material.001": "wood" } },
-  m4: { file: "m4.glb", rot: -Math.PI / 2, mats: { "Material": "black", "Material.001": "gunmetal", "Material.002": "black" } },
-  deagle: { file: "m1911.glb", rot: Math.PI, mats: { "Material": "gunmetal", "Material.001": "woodDark", "Material.002": "steel" } }
+  ak: { file: "hy-ak.glb", rot: Math.PI / 2, own: true },     // Hunyuan 3D (2026-11-22), own textures kept
+  m4: { file: "hy-m4.glb", rot: Math.PI / 2, own: true },
+  mp9: { file: "hy-mp9.glb", rot: Math.PI / 2, own: true },
+  deagle: { file: "hy-deagle.glb", rot: -Math.PI / 2, own: true },
+  awp: { file: "hy-awp.glb", rot: -Math.PI / 2, own: true },
+  glock: { file: "hy-glock.glb", rot: -Math.PI / 2, own: true },
+  usp: { file: "hy-usp.glb", rot: Math.PI / 2, own: true, like: "glock" },   // sized as a bare pistol, the suppressor added in code
+  knife: { file: "hy-knife-atlas.glb", rot: -Math.PI / 2, own: true },       // Atlas: teal blade
+  knifeE: { file: "hy-knife-ember.glb", rot: -Math.PI / 2, own: true, like: "knife" }   // Ember: black blade
 };
-const LOADED = {};
+/* two cuts of every Hunyuan 3D file (2026-11-22): the full one (30k faces, colour + normal + metal maps) for the gun in your
+   own hands on a computer, and the m- one (5k faces, a 512 colour map only) for guns in other players' hands, and for
+   everything on a phone, where the full set ran out of graphics memory (the screen broke up and the game hung) */
+let LITE = false;
+export function setLite(v) { LITE = !!v; }
+export const fileFor = f => (LITE ? "m-" : "") + f;
+const LOADED = {}, LOADED3 = {};
 export async function loadGunModels(loader) {
-  await Promise.all(Object.entries(IMPORTED).map(async ([w, d]) => { try { LOADED[w] = fitImported(w, d, (await loader.loadAsync("models/" + d.file)).scene); } catch (e) {} }));
+  await Promise.all(Object.entries(IMPORTED).flatMap(([w, d]) => [
+    (async () => { try { LOADED3[w] = fitImported(w, d, (await loader.loadAsync("models/m-" + d.file)).scene); if (LITE) LOADED[w] = LOADED3[w]; } catch (e) {} })(),
+    LITE ? null : (async () => { try { LOADED[w] = fitImported(w, d, (await loader.loadAsync("models/" + d.file)).scene); } catch (e) {} })()]));
   return Object.keys(LOADED);
 }
 function fitImported(w, d, scene) {
-  const code = codeGun(w), cb = new THREE.Box3().setFromObject(code); disposeTree(code);
+  const code = codeGun(d.like || w), cb = new THREE.Box3().setFromObject(code); disposeTree(code);
   bakeSkins(scene); const root = new THREE.Group(); scene.rotation.y += d.rot; root.add(scene);
-  scene.traverse(o => { if (o.isMesh) { o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; o.castShadow = true; o.geometry.userData.shared = true; } });
+  if (!d.noLevel) levelRoll(root, scene);
+  scene.traverse(o => { if (o.isMesh) { if (!d.own) o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; else o.material.userData.shared = true; o.castShadow = true; o.geometry.userData.shared = true; } });
   let b = new THREE.Box3().setFromObject(root); root.scale.setScalar((cb.max.z - cb.min.z) / (b.max.z - b.min.z)); root.updateMatrixWorld(true);
   b = new THREE.Box3().setFromObject(root);
   root.position.set((cb.min.x + cb.max.x) / 2 - (b.min.x + b.max.x) / 2, cb.max.y - b.max.y, cb.min.z - b.min.z);
   return root;
+}
+/* upright about the barrel (2026-11-22): the generated files come with some roll of their own (the Maverick lay 45 degrees
+   on its side, the Deagle 10), so the gun's cross-section seen down the barrel is turned until its long axis, grip to top,
+   is vertical */
+function cov(root, scene, a, b) {   // the spread of the points over two axes (0 x, 1 y, 2 z)
+  root.updateMatrixWorld(true); const v = new THREE.Vector3(); let n = 0, mx = 0, my = 0, xx = 0, yy = 0, xy = 0;
+  scene.traverse(o => { if (!o.isMesh) return; const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 3) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); const X = v.getComponent(a), Y = v.getComponent(b); n++; mx += X; my += Y; xx += X * X; yy += Y * Y; xy += X * Y; } });
+  return { n, mx, my, xx, yy, xy };
+}
+function levelRoll(root, scene) {
+  // first the barrel straight along the length (the Deagle came turned a few degrees to one side)
+  { let { n, mx, my, xx, yy, xy } = cov(root, scene, 2, 0); if (n) { mx /= n; my /= n; xx = xx / n - mx * mx; yy = yy / n - my * my; xy = xy / n - mx * my;
+    const yaw = .5 * Math.atan2(2 * xy, xx - yy); if (Math.abs(yaw) > .01 && Math.abs(yaw) < .3) scene.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)); } }
+  let { n, mx, my, xx, yy, xy } = cov(root, scene, 0, 1);
+  if (!n) return; mx /= n; my /= n; xx = xx / n - mx * mx; yy = yy / n - my * my; xy = xy / n - mx * my;
+  const major = .5 * Math.atan2(2 * xy, xx - yy);   // the long axis' angle from +X
+  let roll = Math.PI / 2 - major; roll = Math.atan2(Math.sin(roll), Math.cos(roll)); if (roll > Math.PI / 2) roll -= Math.PI; if (roll < -Math.PI / 2) roll += Math.PI;
+  if (Math.abs(roll) < .03 || Math.abs(roll) > 1.2) return;   // already upright, or not a gun shape (a flat blade)
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll); scene.quaternion.premultiply(q);
 }
 /* a rigged file (a bolt, a slide) drawn in its rest pose as a plain mesh: a skinned mesh measures in its bind pose but draws
    through its bones, and the two disagreed in the view (the AK came out far too big); the moving parts are animated in
@@ -146,12 +188,16 @@ function bakeSkins(scene) {
   }
   scene.traverse(o => { if (o.isBone) o.visible = false; });
 }
-export function gunModel(w) {
-  if (LOADED[w]) { const g = new THREE.Group(); g.add(LOADED[w].clone()); return g; }   // a holder: callers scale and turn it, the fit inside stays
-  return codeGun(w);
+export function gunModel(w, team = 0, third = false) {
+  const L = third && !LITE ? LOADED3 : LOADED;   // third person: the light cut
+  if (w === "knife" && team && L.knifeE) w = "knifeE";   // each team's own knife
+  if (L[w]) { const g = new THREE.Group(); g.add(L[w].clone());
+    if (w === "usp") { g.add(tube(.016, .15, MAT.black, .175, .04)); g.add(tube(.017, .004, MAT.gunmetal, .1, .04)); }   // the USP-S suppressor
+    return g; }   // a holder: callers scale and turn it, the fit inside stays
+  return codeGun(w, third);
 }
-function codeGun(w) {
-  if (VARIANT[w]) return variant(w, gunModel(VARIANT[w]));
+function codeGun(w, third = false) {
+  if (VARIANT[w]) return variant(w, gunModel(VARIANT[w], 0, third));
   const g = new THREE.Group(), add = m => g.add(m);
   if (w === "knife") {
     add(profile([[0, -.012], [.16, -.012], [.215, .004], [.17, .016], [.0, .016]], .005, MAT.blade, .0015));
@@ -265,20 +311,32 @@ export const sleeveMaterial = team => kit(team).cloth;
    (each triangle by the bone that moves it most), and posed in code every frame: each hand is put on the gun and turned
    to hold it, the fingers curl round, and a two-bone solve bends the elbow so the arm reaches the hand. The file's hands
    hang from their own control bones (its IK lived in Blender and does not export), which is what makes this possible */
-const ARMS = { scene: null };
-export async function loadArms(loader) { try { ARMS.scene = (await loader.loadAsync("models/arms.glb")).scene; } catch (e) {} return !!ARMS.scene; }
+/* 2026-11-22: each team's own textured Hunyuan 3D arms (arms-atlas, arms-ember) on the same rig: assets/hy/fitarms.py
+   poses the rig into their shape and gives them its weights, so the posing below works on them unchanged; they keep
+   their own colours. A team without its file falls back to the CC0 arms in its sleeves */
+const ARMS = { scene: null, team: [null, null], used: false };
+const load1 = async (loader, f) => { try { return (await loader.loadAsync("models/" + f)).scene; } catch (e) { return null; } };
+export async function loadArms(loader) {
+  [ARMS.scene, ARMS.team[0], ARMS.team[1]] = await Promise.all(["arms.glb", fileFor("arms-atlas.glb"), fileFor("arms-ember.glb")].map(f => load1(loader, f)));
+  return !!(ARMS.scene || ARMS.team[0] || ARMS.team[1]);
+}
 const HANDISH = /hand|palm|f_|thumb/;
-export function makeArms(sleeve) {
-  if (!ARMS.scene) return null;
-  const root = ARMS.scene; let mesh = null; root.traverse(o => { if (o.isSkinnedMesh) mesh = o; });
+export function makeArms(sleeve, team = 0) {
+  let root = ARMS.team[team ? 1 : 0];
+  if (!root) { if (!ARMS.scene || ARMS.used) return null; root = ARMS.scene; ARMS.used = true; }
+  // the HY files carry two skinned meshes on one skeleton: the textured sleeves and the rig's own gloved hands (Glove)
+  let mesh = null; const extra = []; root.traverse(o => { if (!o.isSkinnedMesh) return; if (o.name.startsWith("Glove")) extra.push(o); else mesh = o; });
   if (!mesh) return null;
+  for (const o of extra) { o.frustumCulled = false; o.castShadow = false; }
+  const own = !!(mesh.material && mesh.material.map);
   // dress: the team's sleeve, darkened to a glove where the hand bones carry the skin. A colour per vertex, so the cuff
   // blends across the wrist (whole triangles to one material or the other left a saw-tooth edge, 2026-11-16)
   const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = mesh.skeleton.bones, n = si.count, col = new Float32Array(n * 3);
-  for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
+  if (own) { mesh.frustumCulled = false; mesh.castShadow = false; mesh.material.roughness = Math.max(mesh.material.roughness, .6); }
+  else for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
     col.fill(1 - .89 * THREE.MathUtils.smoothstep(hw, .35, .75), v * 3, v * 3 + 3); }   // 1 on the sleeve, .11 (a dark glove) on the hand
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.clearGroups();
-  sleeve.vertexColors = true; sleeve.needsUpdate = true; mesh.material = sleeve; mesh.frustumCulled = false; mesh.castShadow = false;
+  if (!own) { g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.clearGroups();
+  sleeve.vertexColors = true; sleeve.needsUpdate = true; mesh.material = sleeve; mesh.frustumCulled = false; mesh.castShadow = false; }
   const B = n => bones.find(b => b.name === n.replace(/\./g, ""));
   const side = k => ({ up: B("upper_arm." + k), fore: B("forearm." + k), end: B("forearm." + k + "_end"), hand: B("hand." + k + ".control"),
     fingers: ["index", "middle", "ring", "pinky"].flatMap(f => [1, 2, 3].map(i => B(`f_${f}.0${i}.${k}`))).filter(Boolean), thumb: [1, 2, 3].map(i => B(`thumb.0${i}.${k}`)).filter(Boolean) });
@@ -320,7 +378,125 @@ export function makeArms(sleeve) {
       root.updateMatrixWorld(true);
     } };
 }
-export function soldier(team) {
+/* fighters (2026-11-21): bodies generated in Hunyuan 3D and rigged by us (22 bones, MODELS.md), posed here every frame
+   by the same walk, crouch and aim as the code-built soldier below, with a two-bone reach that puts the hands on the
+   gun. Each team has a few bodies; a player keeps one by their name. Until the files load, the code-built one stands in */
+const FIGHTERS = { 0: ["atlas1", "atlas2", "atlas3", "atlas4"], 1: ["ember1", "ember2", "ember3", "ember4", "ember5"] }, HY = { 0: [], 1: [] }, HEIGHT = 1.78;
+export async function loadFighters(loader) {
+  await Promise.all(Object.entries(FIGHTERS).flatMap(([team, names]) => names.map(async n => {
+    try { const scene = (await loader.loadAsync("models/" + fileFor(`fighter-${n}.glb`))).scene; HY[team].push(prepFighter(scene, +team, n)); } catch (e) {} })));
+  for (const t of [0, 1]) HY[t].sort((a, b) => a.n < b.n ? -1 : 1);
+  return HY[0].length + HY[1].length;
+}
+function prepFighter(scene, team, n) {
+  let mesh = null; scene.traverse(o => { if (o.isSkinnedMesh) mesh = o; });
+  const g = mesh.geometry; g.computeBoundingBox(); const bb = g.boundingBox, h = bb.max.y - bb.min.y; g.userData.shared = true;
+  let mat = mesh.material;
+  if (!mat.map) {   // a grey body: the team's colours by height (boots, trousers, jacket, head), blended across each band
+    const P = g.attributes.position, col = new Float32Array(P.count * 3), cs = (team ? [0x1d1915, 0x54432f, 0x9c8259, 0x6b5a44] : [0x1d1915, 0x2f3947, 0x3b4a5f, 0x2b3542]).map(x => new THREE.Color(x)), cut = [.07, .5, .86], tmp = new THREE.Color();
+    for (let v = 0; v < P.count; v++) { const f = (P.getY(v) - bb.min.y) / h; let i = 0; while (i < 3 && f > cut[i] + .02) i++;
+      tmp.copy(cs[i]); if (i < 3 && f > cut[i] - .02) tmp.lerp(cs[i + 1], (f - cut[i] + .02) / .04); col.set([tmp.r, tmp.g, tmp.b], v * 3); }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3)); mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 });
+  } else mat.roughness = Math.max(mat.roughness, .7);
+  mat.userData.shared = true;
+  return { n, scene, mat, s: HEIGHT / h, y: -bb.min.y * HEIGHT / h };
+}
+export const CR = { drop: .45, thigh: 1.15, shin: 2.2, lean: 0 };   // the fighter crouch, tuned against the hit boxes
+const AIR = { thigh: .55, shin: 1.1 };   // the jump tuck: sim.js AIR, which the leg hit boxes use, keep both the same
+const sm = x => x * x * (3 - 2 * x), seg = (p, a, b) => sm(Math.min(1, Math.max(0, (p - a) / (b - a))));
+function fighter(team, F) {
+  const root = new THREE.Group(), fit = new THREE.Group(), body = cloneSkinned(F.scene); fit.add(body); root.add(fit);
+  fit.rotation.y = Math.PI; fit.scale.setScalar(F.s); fit.position.y = F.y;   // the files face +Z; the game's forward is -Z
+  body.traverse(o => { if (o.isMesh) { o.material = F.mat; o.castShadow = true; o.frustumCulled = false; } });
+  const bones = {}; body.traverse(o => { if (o.isBone) bones[o.name] = o; });
+  root.updateMatrixWorld(true);
+  // each bone's rest: its own turn, and its turn in the body's frame, so a turn about the body's axes can be applied to it
+  const rest = new Map(), wq = new THREE.Quaternion(), rq = new THREE.Quaternion();
+  for (const b of Object.values(bones)) rest.set(b, { p: b.position.clone(), q: b.quaternion.clone(), w: b.getWorldQuaternion(new THREE.Quaternion()) });
+  const turn = (b, x, y = 0, z = 0) => { const r = rest.get(b); rq.setFromEuler(new THREE.Euler(x, y, z)); b.quaternion.copy(r.q).multiply(wq.copy(r.w).invert().multiply(rq).multiply(r.w)); };
+  // the hips drop in the body's frame: one metre down, in the hips' parent's terms
+  const H = bones.hips, hp = H.getWorldPosition(new THREE.Vector3()), down = H.parent.worldToLocal(hp.clone().setY(hp.y - 1)).sub(H.parent.worldToLocal(hp.clone()));
+  const torso = new THREE.Group(); root.add(torso); const mount = new THREE.Group(); torso.add(mount);
+  let held = null;
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), pole = new THREE.Vector3();
+  const setWorldQuat = (b, q) => { b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(q)); b.updateMatrixWorld(true); };
+  const turnTo = (b, from, to) => { b.getWorldQuaternion(q1); setWorldQuat(b, new THREE.Quaternion().setFromUnitVectors(from, to).multiply(q1)); };
+  function reach(k, T, poleLocal) {   // shoulder fixed, elbow from the two lengths, bent toward the pole, wrist on T
+    const up = bones["upperarm" + k], fo = bones["forearm" + k], hd = bones["hand" + k];
+    const sh = up.getWorldPosition(new THREE.Vector3()), el0 = fo.getWorldPosition(new THREE.Vector3()), wr0 = hd.getWorldPosition(new THREE.Vector3());
+    const la = sh.distanceTo(el0), lb = el0.distanceTo(wr0), d = v1.copy(T).sub(sh), dist = THREE.MathUtils.clamp(d.length(), Math.abs(la - lb) + 1e-4, (la + lb) * .999);
+    d.normalize(); const ca = (la * la + dist * dist - lb * lb) / (2 * la * dist), along = la * ca, rise = la * Math.sqrt(Math.max(0, 1 - ca * ca));
+    root.getWorldQuaternion(q1); pole.copy(poleLocal).applyQuaternion(q1); pole.addScaledVector(d, -pole.dot(d)).normalize();
+    const elbow = sh.clone().addScaledVector(d, along).addScaledVector(pole, rise);
+    turnTo(up, v2.copy(el0).sub(sh).normalize(), v3.copy(elbow).sub(sh).normalize());
+    const e1 = fo.getWorldPosition(new THREE.Vector3()), w1 = hd.getWorldPosition(new THREE.Vector3());
+    turnTo(fo, v2.copy(w1).sub(e1).normalize(), v3.copy(T).sub(e1).normalize());
+  }
+  const POLE_R = new THREE.Vector3(.6, -1, .3), POLE_L = new THREE.Vector3(-.8, -1, .1), tR = new THREE.Vector3(), tL = new THREE.Vector3();
+  return {
+    root, head: bones.head,
+    setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); mount.userData.w = w; },
+    /* o.move: the walk's direction from the facing (radians, 0 ahead), o.dead: 0..1 into the fall, o.air: 0..1 off the
+       ground, o.land: 1..0 just after landing, o.act: { k: reload | cock | throw | plant | defuse, p: 0..1 through it } */
+    pose(speed, phase, duck, pitch, o = {}) {
+      // strafing (2026-11-22): the hips turn toward the walk, up to 60 degrees, and the chest turns back to the aim; walking
+      // backwards the legs face ahead and step in reverse, so nobody moonwalks
+      let mv = o.move || 0, dir = 1; if (Math.abs(mv) > Math.PI / 2) { mv -= Math.sign(mv) * Math.PI; dir = -1; }
+      const legYaw = speed > .3 ? THREE.MathUtils.clamp(mv, -1.05, 1.05) * Math.min(1, speed / 1.5) : 0, dead = o.dead || 0;
+      phase *= dir;
+      // the crouch (2026-11-22) lowers the head by the 18 units the hit boxes drop (sim.js), upright over the hips, so the
+      // head you see is the head the server tests: the old pose stopped 13 cm high and leant 30 cm forward of it
+      // dying: the knees go first, the chest slumps, the arms drop; game.js tips the whole body over on top of this
+      const kn = Math.min(1, dead * 1.8), bend = Math.max(duck, kn * .8);
+      const air = o.air || 0, land = o.land || 0, act = o.act;
+      const k = Math.min(1, speed / 4.5) * (1 - air * .7), sw = Math.sin(phase) * .6 * k, drop = bend * CR.drop + Math.abs(Math.sin(phase)) * .025 * k + land * .05;
+      for (const [b, r] of rest) { b.position.copy(r.p); b.quaternion.copy(r.q); }
+      H.position.copy(rest.get(H).p).addScaledVector(down, drop); if (legYaw) turn(H, 0, legYaw);   // the legs hang off the hips and turn with them
+      // in the air the knees tuck up (as the leg hit boxes do); a landing gives at the knees for a moment
+      const th = bend * CR.thigh + air * AIR.thigh + land * .12, shn = bend * CR.shin + air * AIR.shin + land * .25;
+      turn(bones.thighR, sw + th); turn(bones.thighL, -sw + th);
+      turn(bones.shinR, -(Math.max(0, Math.sin(phase + 1.2)) * .9 * k + shn)); turn(bones.shinL, -(Math.max(0, Math.sin(phase + 1.2 + Math.PI)) * .9 * k + shn));
+      // planting or defusing the head looks down at the bomb (only the head: the chest stays where its hit box is)
+      const bow = act && (act.k === "plant" || act.k === "defuse") ? .55 : 0;
+      const lean = pitch * .55 + duck * CR.lean - kn * .5; turn(bones.spine, lean, -legYaw * (1 - kn)); turn(bones.neck, pitch * .45 - kn * .4 - bow * (1 - pitch * .45));
+      torso.visible = dead < .05;   // the gun falls out of the hands (the server drops it as a pickup)
+      if (dead > 0) { turn(bones.upperarmR, -kn * .3, 0, -kn * .25); turn(bones.upperarmL, -kn * .3, 0, kn * .25); root.updateMatrixWorld(true); return; }
+      root.updateMatrixWorld(true);
+      // the gun rides the chest: placed off the spine and leaning with it
+      bones.spine.getWorldPosition(v1); torso.position.copy(root.worldToLocal(v1)); torso.rotation.set(lean, 0, 0);
+      const knife = held && held.startsWith("knife"), w = mount.userData.w || "ak", len = MUZZLE[w] ?? .5;
+      if (knife) mount.position.set(.18, .04, -.42); else mount.position.set(.1, .2, -.22);
+      mount.rotation.set(0, 0, 0);
+      // actions (2026-11-22), as CS's third-person: a reload tips the gun and the left hand takes the magazine down to the
+      // belt and back; a grenade is held back over the shoulder with the pin out, then thrown overarm; the bomb is held low
+      // in front with both hands
+      const P = act ? act.p : 0, BACK = [.24, .34, .14], FRONT = [.12, .02, -.55];
+      if (act && act.k === "reload") { const tip = seg(P, 0, .15) * (1 - seg(P, .85, 1)); mount.rotation.set(-.25 * tip, 0, .5 * tip); mount.position.y -= .05 * tip; }
+      else if (act && act.k === "cock") { const b = seg(P, 0, 1); mount.position.set(.1 + (BACK[0] - .1) * b, .2 + (BACK[1] - .2) * b, -.22 + (BACK[2] + .22) * b); }
+      else if (act && act.k === "throw") { const f = seg(P, 0, .55), r = seg(P, .55, 1); for (let i = 0; i < 3; i++) mount.position.setComponent(i, BACK[i] + (FRONT[i] - BACK[i]) * f + ([.1, .2, -.22][i] - FRONT[i]) * r); mount.rotation.x = -1.2 * f * (1 - r); }
+      else if (bow) mount.position.set(.02, -.22, -.4);
+      torso.updateMatrixWorld(true);
+      mount.localToWorld(tR.set(0, -.02, .03));
+      if (act && act.k === "reload" && len >= .3) {   // the left hand: off the grip, to the magazine, down to the belt, back up
+        const g = mount.localToWorld(new THREE.Vector3(0, -.03, -Math.min(.42, len * .5))), mg = mount.localToWorld(new THREE.Vector3(0, -.13, -.1)), belt = torso.localToWorld(new THREE.Vector3(-.16, -.32, -.08));
+        const a = seg(P, .05, .25), b = seg(P, .25, .45) * (1 - seg(P, .5, .7)), c = seg(P, .75, .95);
+        tL.copy(g).lerp(mg, a * (1 - c)).lerp(belt, b);
+        reach("R", tR, POLE_R); reach("L", tL, POLE_L);
+      } else if (act && (act.k === "cock" || act.k === "throw")) {   // the free hand points ahead, as a thrower aims
+        reach("R", tR, POLE_R); reach("L", torso.localToWorld(tL.set(-.12, .12, -.42)), POLE_L);
+      } else if (bow) { reach("R", tR, POLE_R); reach("L", mount.localToWorld(tL.set(-.08, 0, 0)), POLE_L); }
+      else if (knife || len < .3) { reach("R", tR, POLE_R); turn(bones.upperarmL, -sw * .6); bones.upperarmL.updateMatrixWorld(true); if (len < .3 && !knife) reach("L", mount.localToWorld(tL.set(-.03, -.03, .04)), POLE_L); }
+      else { reach("R", tR, POLE_R); reach("L", mount.localToWorld(tL.set(0, -.03, -Math.min(.42, len * .5))), POLE_L); }
+      root.updateMatrixWorld(true);
+    }
+  };
+}
+const hashName = s => { let h = 7; for (const c of String(s || "")) h = Math.imul(h ^ c.charCodeAt(0), 2654435761) >>> 0; return h; };
+export function soldier(team, name) {
+  const list = HY[team ? 1 : 0];
+  return list.length ? fighter(team, list[hashName(name) % list.length]) : codeSoldier(team);
+}
+function codeSoldier(team) {
   const K = kit(team), { c, cloth, vest, pants, gear, pouch, skin, boots, sole, glove } = K;
   const at = (m, x, y, z, rx = 0) => { m.position.set(x, y, z); m.rotation.x = rx; return m; };
   const root = new THREE.Group(), hips = new THREE.Group(); hips.position.y = .95; root.add(hips);
@@ -375,7 +551,7 @@ export function soldier(team) {
   let held = null;
   return {
     root, head,
-    setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w), fin); m.scale.setScalar(1.05); mount.add(m); },
+    setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); },
     /* speed in m/s, phase grows with distance walked, duck 0..1, pitch in radians */
     pose(speed, phase, duck, pitch) {
       const k = Math.min(1, speed / 4.5), sw = Math.sin(phase) * .6 * k;

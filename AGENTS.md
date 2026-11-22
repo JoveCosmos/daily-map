@@ -15,20 +15,27 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   what the shooter saw when it checks a hit (lag compensation, at most 0.4 s back). It also serves the static files.
 - **`game.js` is the client.** It predicts the local player by running `sim.js` on its own inputs, corrects itself when a
   snapshot disagrees (replaying the commands the server has not acknowledged yet), and draws everyone else
-  interpolated about 100 ms in the past. It also does rendering, sound, the HUD, the menu, settings and touch controls.
+  interpolated about 100 ms in the past. It also does rendering, the HUD, the menu, settings and touch controls.
+- **`client/` holds the rest of the client, one module per part:** `core.js` (renderer, scene, camera, URL switches,
+  `$`, `nowS`: no game state, safe to import anywhere), `audio.js`, `fx.js`, `talk.js`, `comp.js` (buy menu, lineups,
+  sites, bomb), `radar.js`, `nades.js`, `viewmodel.js` (guns in hand, arms) and `killcam.js`. They import game state from
+  `game.js` and `game.js` imports them back. Two rules make that work: **only the module that declares a variable
+  assigns it** (an imported binding is read-only; other modules call a setter such as `setBlind`, `recoilFx`,
+  `releaseMouse`), and **a module never reads `game.js` state while it loads** (that state does not exist yet; build
+  such things in a function `game.js` calls, as `initViews()` does). A new file under `client/` is served as is.
 - **Modes, grenades and the bomb are the server's alone.** Deathmatch, Competitive (money, buying, the C4, rounds,
   halftime, votes), Wingman (Competitive two a side on one site, `MODES.wing`), Retakes (`MODES.rt`: the bomb planted when the freeze ends,
   Ember spawned around it, set loadouts in `rtKit`, no buying), Gun Game (`LADDER`, `ggKit`, `ggLevel`;
   no pickups or drops) and the daily challenge (`MODES.dc`, solo against four bots) live in `server.js`; `DMLIKE` and
   `COMP` group them, and `game.js` mirrors that with `dmLike()` and `compLike()`; grenades fly there too (`tickNades`), and clients only draw what each snapshot
-  lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `game.js`: change
+  lists (grenades, smokes, fires). The buy prices are kept in two places, `PRICE` in `server.js` and in `client/comp.js`: change
   both.
 - **`models.js`** builds the soldiers and guns procedurally; most guns are a close relative's model with the parts that
   tell them apart (`VARIANT`). A few guns use a public-domain model instead (`IMPORTED`, files in `models/`, credits in
   MODELS.md): it is painted in the game's own materials and fitted to the code-built gun's box (muzzle, top, centre),
   so hands, flash and tracers need no change, and `?codeguns` shows the old one. Weapon finishes repaint a gun's body
   materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
-  game.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
+  client/viewmodel.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
   menu and all CSS.
 - **The map switch is temporary.** An arrow by the menu's "Next:" moves the public room on now (`/skipmap`,
   `MAP_SKIP` in server.js, on by default for testing, `MAP_SKIP=0` turns it off); remove it when testing is done.
@@ -39,13 +46,13 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **Replays come from the server's record.** Every snapshot tick the server keeps each player's position, view, weapon
   and shots for 10 s (`record`, `e.hist`). A death sends the victim a short record (`sendKillcam`, message `kc`); a round's
   end sends everyone its best moment (`pickHighlight`, message `hl`). Only the dead or the finished round see it, so it
-  gives the living nothing. The client plays both through one player (`KC`, `kcCamera`, `kcBodies` in game.js).
+  gives the living nothing. The client plays both through one player (`KC`, `kcCamera`, `kcBodies` in client/killcam.js).
 - **What is kept on disk** sits next to `boards.json` (or in `$STATE_DIRECTORY`): `stats.json` (lifetime numbers per
   player name, `/stats?name=`) and `challenge.json` (the daily challenge's runs, the last 30 days, `/challenge`). Names
   are free text, there are no accounts. None of these files belong in git.
 - **Smoke lineups** are found by the server once per map (`lineups()`): it throws smokes from the attackers' route with the
   real grenade physics (`botAim`) and keeps two per site that land on it. Clients only draw them (`setLineups`).
-- **Sound** is in game.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
+- **Sound** is in client/audio.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
   Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
   distance and sends it to the echo; `probeEnv` sets the echo from how enclosed the listener is.
 - **Maps** (`maps/<id>.json`) point to a visual mesh, a phone visual and a collision mesh, plus a scale. The server
@@ -114,7 +121,7 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **HUD text is cached.** About twenty HUD elements get a setter that skips an unchanged value (see "HUD writes only when
   the value changes" in game.js), because render() sets them every frame. Writing the same text through another
   route (a child element, `innerText`) bypasses the cache: use the same property.
-- **Placed sounds have a budget** (`AT` in game.js): HRTF only for near sounds and six at a time, distant ones dropped
+- **Placed sounds have a budget** (`AT` in client/audio.js): HRTF only for near sounds and six at a time, distant ones dropped
   when many are playing, wall rays within 60 m. A new sound through `at()` inherits this; one played around it does not.
 - **Headless test browsers join the game.** A test that is killed by a timeout can leave its browser running and
   connected as a phantom player. Close test browsers explicitly.

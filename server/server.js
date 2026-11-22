@@ -10,7 +10,7 @@ import { WebSocketServer } from "ws";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, weapon, eye, eyePos, height, hitBox, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U } from "../sim.js";
+import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, block, weapon, eye, eyePos, height, hitBox, GAIT, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U } from "../sim.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = +(process.env.PORT || 8945), MAP_ID = (process.env.MAP || "standin").replace(/[^a-z0-9_-]/gi, "");
@@ -170,6 +170,7 @@ function ggLevel(by, v, wid) {
   if (by.s.alive) ggKit(by); events.push({ k: "level", id: by.id, l: by.gl }); roster();
 }
 function spawnAt(e) {
+  if (process.env.GHOST === "1" && !e.bot) { e.s.alive = false; return; }   /* test only: humans watch, bots play (balance tests) */
   const n = pickSpawn(e);
   const s = e.s; s.pos.copy(n.p); s.vel.set(0, 0, 0); s.hp = 100; s.alive = true; s.duck = 0; s.punchX = s.punchY = 0; s.deployUntil = 0;
   s.armor = 0; s.helmet = false; s.cock = 0; s.trig = false;
@@ -206,6 +207,11 @@ function stateAt(id, t) {
   for (let i = hist.length - 1; i >= 0; i--) { if (hist[i].time <= tt + 1e-6) { best = hist[i]; break; } }
   const h = best && best.states.get(id); return h || null;
 }
+/* what the hit boxes are posed from: the place, crouch and facing, the aim pitch, the walk's speed, direction and phase */
+function liveState(e) {
+  const s = e.s, sp = Math.hypot(s.vel.x, s.vel.z), cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+  return { x: s.pos.x, y: s.pos.y, z: s.pos.z, duck: s.duck, alive: s.alive, yaw: s.yaw, pitch: s.pitch, sp, ph: e.walk || 0, air: s.alive && !s.onGround ? 1 : 0, mv: sp > .3 ? Math.atan2(s.vel.x * cy - s.vel.z * sy, -s.vel.x * sy - s.vel.z * cy) : 0 };
+}
 function resolveShot(e, dir, viewTime, melee = false, fl = {}, wid = null) {
   e.shots = (e.shots || 0) + 1;   // for the killcam's record
   if (!e.bot && !melee) { statOf(e.name).sh++; statsDirty = true; }
@@ -217,11 +223,11 @@ function resolveShot(e, dir, viewTime, melee = false, fl = {}, wid = null) {
   let best = null;
   for (const v of ents.values()) {
     if (v === e || (v.team === e.team && !FF)) continue;
-    const st = e.bot ? { x: v.s.pos.x, y: v.s.pos.y, z: v.s.pos.z, duck: v.s.duck, alive: v.s.alive, yaw: v.s.yaw } : stateAt(v.id, viewTime);
+    const st = e.bot ? liveState(v) : stateAt(v.id, viewTime);
     if (process.env.DEBUG_SHOTS && !e.bot && st) { const c = new THREE.Vector3(st.x, st.y + 1.2, st.z), along = c.clone().sub(o).dot(dir), miss = o.clone().addScaledVector(dir, along).distanceTo(c);
       log(`shot by ${e.id}: rewind ${((time - viewTime) * 1000).toFixed(0)} ms, target moved ${Math.hypot(st.x - v.s.pos.x, st.z - v.s.pos.z).toFixed(2)} m, ray passes ${(miss * 100).toFixed(0)} cm from the rewound chest, world hit at ${wd.toFixed(1)} m, target at ${along.toFixed(1)} m`); }
     if (!st || !st.alive) continue;
-    const h = hitBox(new THREE.Vector3(st.x, st.y, st.z), st.duck, o, dir, st.yaw);
+    const h = hitBox(new THREE.Vector3(st.x, st.y, st.z), st.duck, o, dir, st.yaw, st);
     if (h && (h.t < wd || (lo && h.t > lo && h.t < hiD)) && (!best || h.t < best.t)) best = { ...h, v, pen: h.t > wd };
   }
   const end = o.clone().addScaledVector(dir, best ? best.t : wd);
@@ -548,7 +554,11 @@ const ALLSITES = W.sites || (W.sites = (() => {
   const n = W.nodes; if (!n.length) return [];
   const dC = W.dijkstra(W.spawn[0][0] ?? 0), dT = W.dijkstra(W.spawn[1][0] ?? 0), span = W.span || 1;
   const open = x => n.filter(y => y.p.distanceTo(x.p) < 3).length >= 12;
-  let cand = n.filter(x => isFinite(dC[x.i]) && isFinite(dT[x.i]) && dC[x.i] > span * .12 && dC[x.i] < dT[x.i] * .85 && open(x));
+  /* 2026-11-22 balance: bot matches showed the side follows how far the sites sit from the CT spawn (Ember won 59-64%
+     where they were 18-26 m out, Atlas 60-65% where one was right at its spawn), so both now sit 25-45% of the map's
+     walk from the CT spawn, and clearly nearer the CTs than the Ts */
+  let cand = n.filter(x => isFinite(dC[x.i]) && isFinite(dT[x.i]) && dC[x.i] > span * .25 && dC[x.i] < span * .45 && dC[x.i] < dT[x.i] * .8 && open(x));
+  if (cand.length < 2) cand = n.filter(x => isFinite(dC[x.i]) && isFinite(dT[x.i]) && dC[x.i] > span * .12 && dC[x.i] < dT[x.i] * .85 && open(x));
   if (cand.length < 2) cand = n.filter(x => isFinite(dC[x.i]) && dC[x.i] < dT[x.i]);
   if (cand.length < 2) cand = n;
   let a = cand[0], b = cand[0];
@@ -786,7 +796,8 @@ function step() {
   const floor = W.bounds.min.y - 4;
   for (const e of ents.values()) {
     if (e.s.alive && e.s.pos.y < floor) { spawnAt(e); log(`[${code}] ${e.name} fell out of the world, respawned`); }   // a slip through the mesh: back in, no death
-    if (e.bot) { if (!frozen()) botTick(e); continue; }
+    const othersOf = () => { const l = []; for (const x of ents.values()) if (x !== e && x.s.alive) l.push({ pos: x.s.pos, duck: x.s.duck }); return l; };
+    if (e.bot) { if (!frozen()) { botTick(e); block(e.s, othersOf()); } continue; }
     // every command that has arrived, at most 8 a tick (a client cannot run faster than real time for long)
     // a client's clock stays within a quarter second of real time either way: idle time cannot be saved up and spent
     // in a burst, and a flood waits its turn
@@ -794,7 +805,7 @@ function step() {
     for (let n = 0; n < 8 && e.q.length && e.clock + DT <= time - e.joinedAt + .25; n++) {
       const cmd = e.q.shift(); e.ack = cmd.seq; e.clock += DT;
       if (frozen()) { cmd.f = cmd.s = 0; cmd.jump = cmd.fire = false; }
-      move(W, e.s, cmd);
+      move(W, e.s, cmd); block(e.s, othersOf());
       const ra0 = e.s.reloadAt, co0 = e.s.cock;
       const shot = weapon(e.s, cmd, e.clock, (e.id * 100003 + cmd.seq) >>> 0);
       if (!ra0 && e.s.reloadAt) events.push({ k: "reload", id: e.id, w: WIDS.indexOf(e.s.w) });   // heard by those near (2026-11-14)
@@ -810,7 +821,9 @@ function step() {
   match();
   tickPickups();
   tickNades();
-  const states = new Map(); for (const e of ents.values()) states.set(e.id, { x: e.s.pos.x, y: e.s.pos.y, z: e.s.pos.z, duck: e.s.duck, alive: e.s.alive, yaw: e.s.yaw });   // facing too: the arms
+  // the walk's phase (2026-11-22): metres walked, as the page steps the legs, so the leg hit boxes are where the legs are drawn
+  for (const e of ents.values()) { const p = e.s.pos, g = e.gp || (e.gp = p.clone()), m = Math.hypot(p.x - g.x, p.z - g.z); if (m < 2) e.walk = ((e.walk || 0) + m * GAIT) % (Math.PI * 2); g.copy(p); }
+  const states = new Map(); for (const e of ents.values()) states.set(e.id, liveState(e));   // facing, pitch and the walk too: the posed hit boxes
   hist.push({ time, states }); if (hist.length > TICK) hist.shift();
   if (tick % 4 === 0) spotted();
   if (tick % TICK === 0) voteTick();
@@ -871,7 +884,7 @@ function sendKillcam(v, by) {
   try { v.ws.send(JSON.stringify({ t: "kc", by: by.id, at: r2(time), h })); } catch (err) {}
 }
 function snapshot() {
-  const row = (e, mine, vis) => [e.id, e.team, e.bot ? 1 : 0, r2(e.s.pos.x), r2(e.s.pos.y), r2(e.s.pos.z), r3(e.s.yaw), r3(e.s.pitch), r2(e.s.duck), e.s.alive ? 1 : 0, r2(e.s.vel.x), r2(e.s.vel.z), WIDS.indexOf(e.s.w), mine ? e.s.hp : null, vis];   // an enemy's health is not sent
+  const row = (e, mine, vis) => [e.id, e.team, e.bot ? 1 : 0, r2(e.s.pos.x), r2(e.s.pos.y), r2(e.s.pos.z), r3(e.s.yaw), r3(e.s.pitch), r2(e.s.duck), e.s.alive ? 1 : 0, r2(e.s.vel.x), r2(e.s.vel.z), WIDS.indexOf(e.s.w), mine ? e.s.hp : null, vis, r2(e.walk || 0), e.s.alive && !e.s.onGround ? 1 : 0];   // an enemy's health is not sent
   if (tick % 640 === 0) for (const [k, v] of seenTill) if (v < time) seenTill.delete(k);   // forget old sightings every 10 s
   const listFor = viewer => { const out = []; for (const e of ents.values()) { if (e === viewer) continue; const v = sendable(viewer, e); if (v) out.push(row(e, e.team === viewer.team, v === 2 ? 0 : 1)); } return out; };
   // every pickup, with the seconds until a taken one comes back (0 = there now), so the page can show where it will be
@@ -1026,7 +1039,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify({ me: st ? statView(st) : null, top: Object.values(STATS).sort((a, b) => b.k - a.k).slice(0, 8).filter(x => x.k > 0).map(x => ({ name: x.n, k: x.k, kd: +(x.k / Math.max(1, x.d)).toFixed(2), hs: x.k ? Math.round(100 * x.hs / x.k) : 0 })) })); return; }
   if (p === "/rooms") { res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify([...rooms.values()].filter(r => r.code === "DAILY").map(r => ({ ...r.info(), skip: MAP_SKIP, preview: "maps/" + r.map + "-preview.jpg", online: [...rooms.values()].reduce((n, x) => n + x.info().humans, 0) })))); return; }
-  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3|models\/[\w.-]+\.glb)$/.test(p) && !p.includes("..");
+  const ok = /^\/(index\.html|preview\.html|game\.js|sim\.js|models\.js|client\/[\w-]+\.js|vendor\/[\w./-]+|maps\/[\w.-]+|sounds\/[\w.-]+\.mp3|models\/[\w.-]+\.glb)$/.test(p) && !p.includes("..");
   const f = path.join(ROOT, p);
   if (!ok || !f.startsWith(ROOT + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404); res.end("not found"); return; }
   const type = MIME[path.extname(f)] || "application/octet-stream", cache = p.startsWith("/vendor/") || p.startsWith("/maps/") || p.startsWith("/sounds/") || p.startsWith("/models/") ? "public, max-age=86400" : "no-cache";

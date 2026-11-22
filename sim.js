@@ -194,6 +194,7 @@ export class World {
     for (const n of nodes) { if (comp[n.i] >= 0) continue; const q = [n.i]; comp[n.i] = n.i; let cnt = 0;
       while (q.length) { const k = q.pop(); cnt++; for (const [j] of nodes[k].nb) if (comp[j] < 0) { comp[j] = n.i; q.push(j); } }
       if (cnt > bestN) { bestN = cnt; best = n.i; } }
+    nodes.forEach(n => n.c = comp[n.i]); this.raw = { nodes, main: best, cell };
     const keep = nodes.filter(n => comp[n.i] === best), remap = new Map(keep.map((n, k) => [n.i, k]));
     keep.forEach(n => { n.nb = n.nb.filter(([j]) => remap.has(j)).map(([j, w]) => [remap.get(j), w]); }); keep.forEach((n, k) => n.i = k);
     this.nodes = keep;
@@ -304,6 +305,20 @@ export function move(w, s, cmd, dt = DT) {
   if (s.onGround && !was) { s.stamina = Math.min(STAMINA.max, (s.stamina || 0) + STAMINA.land * Math.max(0, -vy0) / U); s.landed = true; }   // paid on the first ground step (a jump on that very tick skips it, as in CS)
   else if (s.onGround && s.stamina > 0) s.stamina = Math.max(0, s.stamina - STAMINA.rec * dt);
   if (was && !s.onGround && s.vel.y <= 0) { const o = s.pos.clone(); o.y += .3; const g = w.first(o, DOWN, .62); if (g && Math.abs(g.face.normal.y) > .7) { s.pos.y = g.point.y; s.vel.y = 0; s.onGround = true; } }
+}
+/* players block each other (2026-11-22), as in CS: after its move, a player standing in another's capsule is pushed out
+   sideways and loses the speed it had into them. The server runs it for everyone after each move, the client for itself
+   against where it draws the others, so the two agree but for the others' interpolation delay. others: [{ pos, duck }] */
+export function block(s, others) {
+  if (!s.alive) return;
+  const hs = height(s), R2 = C.radius * 2;
+  for (const o of others) {
+    if (s.pos.y >= o.pos.y + C.stand + (C.crouch - C.stand) * (o.duck || 0) - .05 || o.pos.y >= s.pos.y + hs - .05) continue;   // one above the other
+    let dx = s.pos.x - o.pos.x, dz = s.pos.z - o.pos.z, d = Math.hypot(dx, dz); if (d >= R2) continue;
+    if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
+    const nx = dx / d, nz = dz / d, push = R2 - d; s.pos.x += nx * push; s.pos.z += nz * push;
+    const vn = s.vel.x * nx + s.vel.z * nz; if (vn < 0) { s.vel.x -= vn * nx; s.vel.z -= vn * nz; }
+  }
 }
 export function inaccuracy(s) {
   const W0 = wpn(s); if (W0.melee || W0.nade || W0.c4) return 0;
@@ -421,19 +436,46 @@ function rayCapsule(o, d, a, b, r) {
   for (let k = 0; k < 2; k++) { const p = o.clone().addScaledVector(d, t), u = clamp(ab.dot(p.clone().sub(a)) / abab, 0, 1), c = a.clone().addScaledVector(ab, u), h = raySphere(o, d, c, r); if (h != null) return h; t += r; }
   return null;
 }
-export function hitBox(pos, duck, o, d, yaw = null) {
-  const k = (C.stand + (C.crouch - C.stand) * duck) / C.stand, y = pos.y, cands = [];
-  const head = raySphere(o, d, new THREE.Vector3(pos.x, y + (C.eyeStand + (C.eyeCrouch - C.eyeStand) * duck) + .04, pos.z), .13); if (head != null) cands.push({ t: head, part: "head" });
+/* hit boxes that follow the body (2026-11-22), as CS poses its hit boxes from the same animation the players see: the
+   Hunyuan 3D fighters share one skeleton (models.js fits them all to 1.78 m), so its joints are rebuilt here from what
+   both ends know, the aim pitch, the crouch, the facing, the walk's direction and its phase, with models.js's own pose
+   rules: the chest leans 0.55 of the pitch about the spine, the head a further 0.45 about the neck, the hips drop 0.45 m
+   in a crouch, each thigh swings 0.6 rad in the stride and the knees bend. Measured against the drawn bones (all ten
+   fighters agree within 2 cm). pose: { pitch, ph (walk phase), sp (speed m/s), mv (walk direction from the facing),
+   air (0..1, off the ground: the knees tuck up, 2026-11-22) } */
+export const GAIT = 3.2;   // walk phase per metre walked (models.js steps one leg each half turn)
+export const AIR = { thigh: .55, shin: 1.1 };   // the jump tuck, models.js poses the same
+const BODY = { spine: 1.067, neck: 1.438, head: .222, hips: .89, thigh: .39, shin: .41, legX: .152 };
+export function hitShapes(pos, duck, yaw, pose = {}) {
+  const pitch = pose.pitch || 0, sp = pose.sp || 0, k = Math.min(1, sp / 4.5);
+  let mv = pose.mv || 0, dir = 1; if (Math.abs(mv) > Math.PI / 2) { mv -= Math.sign(mv) * Math.PI; dir = -1; }
+  const ph = (pose.ph || 0) * dir, legYaw = sp > .3 ? clamp(mv, -1.05, 1.05) * Math.min(1, sp / 1.5) : 0;
+  const drop = duck * .45 + Math.abs(Math.sin(ph)) * .025 * k, lean = pitch * .55, cy = Math.cos(yaw ?? 0), sy = Math.sin(yaw ?? 0);
+  const W = (x, y, z) => new THREE.Vector3(pos.x + x * cy + z * sy, pos.y + y, pos.z - x * sy + z * cy);   // the body's frame (forward -Z) to the world
+  const lc = Math.cos(lean), ls = Math.sin(lean), pv = BODY.spine - drop;
+  const upL = (x, y, z) => { const r = y - pv; return r <= 0 ? [x, y, z] : [x, pv + r * lc - z * ls, r * ls + z * lc]; };   // leant with the chest
+  const up = (x, y, z) => W(...upL(x, y, z));
+  const out = [];
+  // the head: the neck leans with the chest, the head turns the rest of the pitch about the neck
+  const [, ny, nz] = upL(0, BODY.neck - drop, 0), ha = lean + pitch * .45;
+  out.push({ part: "head", a: W(0, ny + BODY.head * Math.cos(ha), nz + BODY.head * Math.sin(ha)), r: .13 });
   // the torso in two: the chest, and the stomach below it, which CS hurts a quarter more (2026-11-14)
-  const ch = rayCapsule(o, d, new THREE.Vector3(pos.x, y + 1.14 * k, pos.z), new THREE.Vector3(pos.x, y + 1.45 * k, pos.z), .24); if (ch != null) cands.push({ t: ch, part: "body" });
-  const st = rayCapsule(o, d, new THREE.Vector3(pos.x, y + .95 * k, pos.z), new THREE.Vector3(pos.x, y + 1.14 * k, pos.z), .23); if (st != null) cands.push({ t: st, part: "stomach" });
-  const lg = rayCapsule(o, d, new THREE.Vector3(pos.x, y + .15, pos.z), new THREE.Vector3(pos.x, y + .9 * k, pos.z), .17); if (lg != null) cands.push({ t: lg, part: "leg" });
-  // the arms (2026-11-14): CS's arm hit zone, from each shoulder to the hands holding the gun out in front, turned with
-  // the player's facing (normal damage, covered by armour). Without a facing, there are no arms to hit
-  if (yaw != null) {
-    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), sh = y + 1.36 * k;
-    const arm = (side, reach, drop) => { const a = new THREE.Vector3(pos.x + rx * .2 * side, sh, pos.z + rz * .2 * side), b = new THREE.Vector3(pos.x + fx * reach + rx * .05 * side, sh - drop, pos.z + fz * reach + rz * .05 * side); return rayCapsule(o, d, a, b, .065); };
-    for (const [side, reach, drop] of [[1, .42, .12], [-1, .56, .16]]) { const t = arm(side, reach, drop); if (t != null) cands.push({ t, part: "arm" }); }
+  out.push({ part: "body", a: up(0, 1.14 - drop, 0), b: up(0, 1.42 - drop, 0), r: .24 });
+  out.push({ part: "stomach", a: up(0, .95 - drop, 0), b: up(0, 1.14 - drop, 0), r: .23 });
+  // the arms (2026-11-14): CS's arm hit zone, from each shoulder to the hands on the gun, which rides the chest
+  if (yaw != null) { out.push({ part: "arm", a: up(.17, 1.40 - drop, 0), b: up(.1, 1.25 - drop, -.2), r: .065 }); out.push({ part: "arm", a: up(-.17, 1.40 - drop, 0), b: up(.07, 1.26 - drop, -.56), r: .065 }); }
+  // the legs: each a thigh and a shin, swung by the stride, bent by the crouch, turned with the hips toward the walk
+  const hy = BODY.hips - drop, cl = Math.cos(legYaw), sl = Math.sin(legYaw), sw = Math.sin(ph) * .6 * k;
+  const L = (x, y, z) => W(x * cl + z * sl, y, -x * sl + z * cl);
+  for (const [x, sgn, off] of [[BODY.legX, 1, 0], [-BODY.legX, -1, Math.PI]]) {
+    const air = pose.air || 0, a1 = sgn * sw * (1 - air * .7) + duck * 1.15 + air * AIR.thigh, a2 = a1 - (Math.max(0, Math.sin(ph + 1.2 + off)) * .9 * k * (1 - air * .7) + duck * 2.2 + air * AIR.shin);
+    const ky = hy - BODY.thigh * Math.cos(a1), kz = -BODY.thigh * Math.sin(a1), fy = Math.max(.05, ky - BODY.shin * Math.cos(a2)), fz = kz - BODY.shin * Math.sin(a2);
+    out.push({ part: "leg", a: L(x, hy, 0), b: L(x, ky, kz), r: .1 }); out.push({ part: "leg", a: L(x, ky, kz), b: L(x, fy, fz), r: .08 });
   }
-  if (!cands.length) return null; cands.sort((a, b) => a.t - b.t); return cands[0];
+  return out;
+}
+export function hitBox(pos, duck, o, d, yaw = null, pose = {}) {
+  let best = null;
+  for (const h of hitShapes(pos, duck, yaw, pose)) { const t = h.b ? rayCapsule(o, d, h.a, h.b, h.r) : raySphere(o, d, h.a, h.r); if (t != null && (!best || t < best.t)) best = { t, part: h.part }; }
+  return best;
 }

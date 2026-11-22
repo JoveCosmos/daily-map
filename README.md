@@ -57,7 +57,8 @@ tools/add-map.sh <world.glb> <id> "<Display name>" [--scale 35] [--activate] [--
 It builds a collision mesh (about 200k faces), a desktop visual (compressed, half the triangles, 2048 px textures) and a
 lighter phone visual, removes textures the game never uses, writes `maps/<id>.json`, checks the map is playable, and
 renders a menu preview. It refuses a map with too little walkable ground, a walk shorter than 15 m or longer than 120 m,
-or fewer than 3 safe spawns a team, and reports enclosed pockets. Nothing reaches `maps/` until every step has passed.
+or fewer than 3 safe spawns a team, and reports enclosed pockets and pits (floor a player can drop into from the
+walkable ground and never climb out of; K respawns them, so pits are a warning, not a refusal). Nothing reaches `maps/` until every step has passed.
 The raw upload is kept in `maps/originals/`.
 
 - `--scale` sets metres per model unit (35 suits HY-World exports; try another value if the world looks too big or
@@ -80,6 +81,7 @@ keep multiplayer correct, and traps already hit.
 
 ```
 index.html, game.js     the page and the client (rendering, input, prediction, HUD, menu)
+client/*.js             the client's parts: core (renderer, scene), audio, fx, talk, comp, radar, nades, viewmodel, killcam
 sim.js                  the simulation shared by client and server (movement, collision, weapons, navigation)
 models.js               player and weapon models
 server/server.js        the authoritative game server (rooms, modes, bots, grenades, lag compensation, static files)
