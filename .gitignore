@@ -6,3 +6,10 @@ maps/incoming/
 server/boards.json
 server/stats.json
 server/challenge.json
+
+# Hunyuan 3D models generated for the game: served by the live server only, never in this repo
+models/hy-*.glb
+models/fighter-*.glb
+models/arms-atlas.glb
+models/arms-ember.glb
+assets/
