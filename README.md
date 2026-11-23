@@ -1,7 +1,12 @@
-# Daily Map
+# NG - Newground
 
 A multiplayer first-person shooter in the browser, played on a new AI-generated world every day.
 No install: open a link and play, on desktop or phone.
+
+**Right now the game is scoped down on purpose:** one mode (Today's match, deathmatch on today's map with everyone
+online) and only the guns that have a real model (AK-47, M4A4, AWP, MP9, Glock-18, USP-S, Desert Eagle, the knife).
+Everything else below is built and kept in the code, switched off (`OFF` in `sim.js` for guns, `hidden` cards in the
+menu for modes) until it has been finished from start to end against [CHECKLISTS.md](CHECKLISTS.md), one at a time.
 
 ## What is in it
 
@@ -13,9 +18,11 @@ No install: open a link and play, on desktop or phone.
   XM1014), rifles (Galil AR, FAMAS, AK-47, M4A4, M4A1-S, SG 553, AUG, SSG 08, AWP), the Negev, the Zeus x27, the knife.
   A spray pattern per gun, spread that builds while spraying and recovers, tagging, wallbangs through thin walls, head,
   chest, stomach, arm and leg zones, CS armour and helmets, burst fire on the Glock and FAMAS.
+  Each gun handles in its own way (spray recovery, how the view settles, the gun's kick, climb, twist and flash), and
+  the drawn guns have their own recorded shots: a deep, barking AK, a lean, cracking M4, a suppressed USP-S.
 - **Grenades:** HE, flashbang, smoke, molotov and decoy, thrown, lobbed or bounced with real physics. Smoke blocks sight
   (for bots and for what the server sends), fire burns for 7 seconds and smoke puts it out.
-- **Modes:** Deathmatch (the public room on today's map, or your own), Competitive (CS's short match with money, a buy
+- **Modes** (only Today's match is switched on for now): Deathmatch (the public room on today's map, or your own), Competitive (CS's short match with money, a buy
   menu, two bomb sites placed on every map automatically, the C4 planted and defused, round pay, halftime, spectating
   teammates after death, and votes), Wingman (2 v 2 on one site), Retakes (the bomb already down: hold the site or retake
   it), Gun Game (every kill hands you the next gun) and a daily challenge (8 kills against bots, fastest time wins, share
@@ -24,7 +31,8 @@ No install: open a link and play, on desktop or phone.
   and a headshot sound, smoke lineups on every site, and lifetime stats per player name.
 - **Movement:** Source-style running, air strafing and crouching, CS's landing slowdown, bunny hops and crouch-jumps.
 - **Generated worlds:** maps made with Tencent HY-World, turned into a playable map (collision, phone version, spawns,
-  bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room rotates through `maps/rotation.json`.
+  bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room changes to the next map of `maps/rotation.json`
+  every day at midnight UTC (the arrow beside "Next" skips ahead).
 - **Bots** at four difficulties that strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
   team chat, radio calls and pings; a damage report and assists; private rooms with a 4-letter code; a leaderboard per
   map; recorded gun sounds heard in 3D, with echo from the surroundings, bullets that crack and whiz past; real models for the AK-47, M4 and Desert Eagle held in rigged first-person arms; sparks, brass and bullet holes; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
@@ -57,8 +65,10 @@ tools/add-map.sh <world.glb> <id> "<Display name>" [--scale 35] [--activate] [--
 It builds a collision mesh (about 200k faces), a desktop visual (compressed, half the triangles, 2048 px textures) and a
 lighter phone visual, removes textures the game never uses, writes `maps/<id>.json`, checks the map is playable, and
 renders a menu preview. It refuses a map with too little walkable ground, a walk shorter than 15 m or longer than 120 m,
-or fewer than 3 safe spawns a team, and reports enclosed pockets and pits (floor a player can drop into from the
-walkable ground and never climb out of; K respawns them, so pits are a warning, not a refusal). Nothing reaches `maps/` until every step has passed.
+or fewer than 3 safe spawns a team, and reports enclosed pockets. Before the check, `tools/fillpits.mjs` guards the collision against
+holes: an invisible floor tile in every hole of the ground, a lid on every small pit, and an invisible rail along a
+large lower area (a street below a raised yard), so nobody can fall where they cannot climb back out; the check then
+refuses a map with any pit left. Nothing reaches `maps/` until every step has passed.
 The raw upload is kept in `maps/originals/`.
 
 - `--scale` sets metres per model unit (35 suits HY-World exports; try another value if the world looks too big or

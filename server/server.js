@@ -10,7 +10,7 @@ import { WebSocketServer } from "ws";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, block, weapon, eye, eyePos, height, hitBox, GAIT, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U } from "../sim.js";
+import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, block, weapon, eye, eyePos, height, hitBox, GAIT, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U, OFF } from "../sim.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = +(process.env.PORT || 8945), MAP_ID = (process.env.MAP || "standin").replace(/[^a-z0-9_-]/gi, "");
@@ -57,7 +57,7 @@ MODES.wing = { ...MODES.comp, name: "Wingman", roundTime: ENV("ROUND_TIME") ?? 9
 MODES.rt = { ...MODES.comp, name: "Retakes", roundTime: ENV("ROUND_TIME") ?? 60, toWin: ENV("TO_WIN") ?? 8, maxRounds: 14, half: ENV("HALF") ?? 7 };
 MODES.dc = { name: "Daily challenge", time: 600, kills: ENV("DC_KILLS") ?? 8, penalty: 10 };
 const DC_EPOCH = Date.UTC(2026, 10, 16), dcDay = () => Math.floor((Date.now() - DC_EPOCH) / 86400000) + 1;
-const LADDER = ["ak", "m4", "aug", "famas", "p90", "mp7", "mac10", "xm1014", "awp", "ssg08", "deagle", "p250", "glock", "knife"];
+const LADDER = ["ak", "m4", "aug", "famas", "p90", "mp7", "mac10", "xm1014", "awp", "ssg08", "deagle", "p250", "glock", "knife"].filter(w => !OFF.has(w));
 /* bot difficulty (2026-11-14), as CS offers it: how fast a bot reacts, how far its aim strays (x), how often it goes for the
    head, how wide it notices things (degrees either side), how readily it uses grenades (x) */
 const FINISHES = ["factory", "desert", "arctic", "night", "forest", "crimson", "gold"];   // weapon finishes, as models.js (cosmetic)
@@ -83,7 +83,7 @@ const SIDE = W.side || (W.side = (() => { const dA = W.dijkstra(W.spawn[0][0] ??
   // 2.5 m above the eyes, or walls within 1.2 m on at least 6 of 8 sides
   const UP = new THREE.Vector3(0, 1, 0), D8 = [...Array(8)].map((_, k) => new THREE.Vector3(Math.cos(k * Math.PI / 4), 0, Math.sin(k * Math.PI / 4)));
   const open = n => { const o = n.p.clone(); o.y += 1.6; if (W.first(o, UP, 2.5)) return false; let walls = 0; for (const d of D8) if (W.first(o, d, 1.2)) walls++; return walls < 6; };
-  const ok = W.nodes.map(open);
+  const ok = W.spawnOk = W.nodes.map(open);   // kept for Retakes' Atlas spawns, which may lie outside both sides
   return [W.nodes.filter(n => ok[n.i] && dA[n.i] < dB[n.i] * .55).map(n => n.i), W.nodes.filter(n => ok[n.i] && dB[n.i] < dA[n.i] * .55).map(n => n.i)]; })());
 log(`[${code}] team sides: ${SIDE[0].length} / ${SIDE[1].length} spawn points`);
 let DUEL = null;
@@ -96,8 +96,16 @@ if (process.env.DUEL === "1") {
 function pickSpawn(e) {
   if (DUEL) return DUEL[e.team];
   if (RT && G.rtSite != null && SITES[G.rtSite]) {   // Retakes: Ember around the planted site, Atlas on their own side well away from it
-    const sp = SITES[G.rtSite].p, ok = n => { const d = n.p.distanceTo(sp); return e.team === 1 ? d > 3 && d < 13 : d > 28 && SIDE[0].includes(n.i); };
-    const pool = W.nodes.filter(ok); if (pool.length) return pool[(Math.random() * pool.length) | 0]; }
+    const sp = SITES[G.rtSite].p;
+    /* Atlas: 16-30 m from the site, anywhere but Ember's own side (spawn pockets left out), else the farthest third of
+       that (2026-11-23: the fixed "more than 28 m on Atlas's side" matched no point on any map once the sites moved to
+       25-45% of the walk from the CT spawn, so every Retakes round fell back to the normal spawn: on Market B, whose
+       site Atlas's side surrounds, within 8.5 m of the bomb, among the Ember) */
+    const pool = e.team === 1 ? W.nodes.filter(n => { const d = n.p.distanceTo(sp); return d > 3 && d < 13; })
+      : (W.rtFar || (W.rtFar = {}))[SITES[G.rtSite].name] || (W.rtFar[SITES[G.rtSite].name] = (() => { const tSide = new Set(SIDE[1]);
+          const s = W.nodes.filter(n => !tSide.has(n.i) && W.spawnOk[n.i]).map(n => n.i).map(i => [W.nodes[i], W.nodes[i].p.distanceTo(sp)]).sort((a, b) => b[1] - a[1]);
+          const far = s.filter(x => x[1] > 16 && x[1] < 30); return (far.length >= 8 ? far : s.slice(0, Math.max(1, Math.ceil(s.length / 3)))).map(x => x[0]); })());
+    if (pool.length) return pool[(Math.random() * pool.length) | 0]; }
   if (process.env.SPAWN_AT && !e.bot) { const x = PK.find(k => k.w === process.env.SPAWN_AT); if (x) return { p: x.p.clone().add(new THREE.Vector3(.6, 0, 0)), i: 0 }; }   // test only
   // the team's side: every walkable point clearly nearer its own end of the map than the other's (about a third of the
   // map), not a fixed spot. A random point of it no living enemy can see and no closer than 15 m to one (a fixed
@@ -449,7 +457,8 @@ if (!W.layout) { const PK = []; let pkId = 1;   // the layout once per map; each
     return pick; };
   // weapons where both sides reach about as soon as each other, away from either spawn
   const mid = n.map(x => x.i).filter(i => isFinite(dA[i]) && isFinite(dB[i]) && dA[i] > span * .3 && dB[i] > span * .3 && Math.abs(dA[i] - dB[i]) < span * .22);
-  const kinds = ["awp", "aug", "sg553", "ak", "m4", "m4a1s", "deagle", "mp9", "mac10", "nova", "p90", "ssg08", "negev", "xm1014", "famas", "galil"];
+  const kinds = ["awp", "aug", "sg553", "ak", "m4", "m4a1s", "deagle", "mp9", "mac10", "nova", "p90", "ssg08", "negev", "xm1014", "famas", "galil"].filter(w => !OFF.has(w));
+  while (kinds.length < 8) kinds.push(kinds.length % 2 ? "m4" : "ak");   /* with guns switched off (sim.js OFF), the rifles fill the spots */
   spread(mid.length ? mid : n.map(x => x.i), kinds.length).forEach((i, j) => PK.push({ id: pkId++, kind: 0, w: kinds[j], p: n[i].p.clone(), home: true, respawn: kinds[j] === "awp" ? 40 : 25, at: 0 }));
   const away = n.map(x => x.i).filter(i => dA[i] > 5 && dB[i] > 5);
   spread(away, 6, PK.map(x => x.p)).forEach(i => PK.push({ id: pkId++, kind: 1, p: n[i].p.clone(), home: true, respawn: 10, at: 0 }));
@@ -596,6 +605,7 @@ function compKit(e, keep) {
    its slot; armour 650, armour + helmet 1000 (the helmet alone 350 on full armour); four grenades at most, two flashes */
 function buy(e, item) {
   const s = e.s, P = PRICE[item === "molotov" && e.team === 0 ? "incendiary" : item]; if (!P || !canBuy(e)) return false;
+  if (OFF.has(item)) return false;   // switched off for now (sim.js OFF)
   let price = P[0]; if (P[1] != null && P[1] !== e.team) return false;
   const nadeCount = NADES.reduce((t, n) => t + s.nades[n], 0);
   if (item === "vest") { if (s.armor >= 100) return false; }
@@ -615,7 +625,7 @@ function buy(e, item) {
 /* bots buy by their money, as CS bots do: a full buy (rifle, armour + helmet, grenades), a force buy, or an eco */
 function botBuy(b) {
   const s = b.s, rifle = b.team ? "ak" : "m4", m = () => b.money || 0;
-  const ctRifle = Math.random() < .5 ? "m4a1s" : "m4";
+  const ctRifle = !OFF.has("m4a1s") && Math.random() < .5 ? "m4a1s" : "m4";
   if (m() >= PRICE[b.team ? "ak" : ctRifle][0] + 1000) { if (!s.prim || !["ak", "m4", "m4a1s", "awp", "aug", "sg553"].includes(s.prim)) buy(b, Math.random() < .12 && m() >= 4750 + 1000 ? "awp" : b.team ? "ak" : ctRifle); buy(b, "vesthelm"); if (!b.team) buy(b, "kit"); for (const n of ["smoke", "flash", "he", "molotov"]) if (m() > 500) buy(b, n); }
   else if (m() >= 2700 && !s.prim) { buy(b, b.team ? "galil" : "famas"); buy(b, "vest"); }
   else if (m() >= 1700 && !s.prim) { buy(b, ["ump", "mp7", b.team ? "mac10" : "mp9"][(Math.random() * 3) | 0]); buy(b, "vest"); }
@@ -965,14 +975,18 @@ const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function newCode() { for (;;) { let c = ""; for (let i = 0; i < 4; i++) c += ALPHA[(Math.random() * ALPHA.length) | 0]; if (!rooms.has(c)) return c; } }
 
 setInterval(() => { for (const [c, r] of rooms) if (c !== "DAILY" && r.idle()) { rooms.delete(c); log(`room ${c} closed (empty)`); } }, 10000);
-/* the daily map: one public room on a generated world that changes on a schedule (hourly for the demo; DAILY_PERIOD=86400
-   switches at midnight UTC). Everyone in it is moved to the new world when it changes */
-const DAILY_LIST = ROTATION, DAILY_PERIOD = +(process.env.DAILY_PERIOD || 3600);
+/* the daily map: one public room on a generated world that changes every day at midnight UTC (2026-11-23; was hourly
+   for the demo, DAILY_PERIOD=3600 brings that back for tests). The menu's next-map arrow still skips ahead (dailySkip).
+   Everyone in it is moved to the new world when it changes */
+const DAILY_LIST = ROTATION, DAILY_PERIOD = +(process.env.DAILY_PERIOD || 86400);
 /* today's board: every human's kills and deaths for each turn of the rotation (one map, one DAILY_PERIOD), kept for
    the last 8 turns in $STATE_DIRECTORY/boards.json so a restart keeps it. Names are free text (no accounts): one name,
    one row. Kills count against the other team (bots included); deaths count however they happen */
 const BOARD_FILE = path.join(process.env.STATE_DIRECTORY || path.dirname(new URL(import.meta.url).pathname), "boards.json"), slotNow = () => Math.floor(Date.now() / 1000 / DAILY_PERIOD);
 let boards = (() => { try { return JSON.parse(fs.readFileSync(BOARD_FILE, "utf8")); } catch (e) { return {}; } })(), boardsDirty = false;
+/* turns numbered under a shorter period (the hourly demo) are far larger than today's and would push today's board out
+   of the last 8: drop any turn from the future */
+for (const k of Object.keys(boards)) if (+k > slotNow()) { delete boards[k]; boardsDirty = true; }
 function boardHit(slot, map, name, dk, dd) { const b = boards[slot] || (boards[slot] = { map, s: {} }), r = b.s[name] || (b.s[name] = [0, 0]); r[0] += dk; r[1] += dd; boardsDirty = true; }
 setInterval(() => { if (!boardsDirty) return; boardsDirty = false; for (const k of Object.keys(boards).map(Number).sort((a, b) => b - a).slice(8)) delete boards[k];
   try { fs.writeFileSync(BOARD_FILE + ".tmp", JSON.stringify(boards)); fs.renameSync(BOARD_FILE + ".tmp", BOARD_FILE); } catch (e) { log("boards: " + e.message); } }, 10000);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # add-map.sh: a world generated on Tencent's HY-World site -> a playable map of the daily rotation, in one command.
 #   tools/add-map.sh <upload.glb> <id> "<Display name>" [--scale 35] [--activate] [--force]
-# Steps: collision (200k faces), desktop visual (meshopt, webp 2048, half the triangles), phone visual (webp 1024,
+# Steps: collision (200k faces), pits filled in it (fillpits.mjs), desktop visual (meshopt, webp 2048, half the triangles), phone visual (webp 1024,
 # ~15%), unused textures stripped, map json, playability check (fails the map when it cannot be played), menu
 # preview, raw upload kept in maps/originals. --activate appends the id to maps/rotation.json and, when RESTART_CMD is
 # set, runs it to restart the game server (players are put straight back into the room). Nothing reaches maps/ until every step has passed.
@@ -18,7 +18,6 @@ W=$(mktemp -d "$T/work-$ID-XXXX"); trap 'rm -rf "$W"' EXIT
 GT=$T/node_modules/.bin/gltf-transform; step() { printf '\n== %s\n' "$*"; }
 SECONDS=0
 step "collision"; "$T/.venv/bin/python" "$T/collision.py" "$SRC" "$W/coll-raw.glb"
-"$GT" meshopt "$W/coll-raw.glb" "$W/$ID-coll.glb" >/dev/null
 step "desktop visual"; "$GT" optimize "$SRC" "$W/vis.glb" --compress meshopt --texture-compress webp --texture-size 2048 --simplify true --simplify-ratio 0.5 --simplify-error 0.0008 >/dev/null
 node "$T/strip.mjs" "$W/vis.glb" "$W/$ID-visual.glb" >/dev/null
 step "phone visual"; "$GT" optimize "$SRC" "$W/vism.glb" --compress meshopt --texture-compress webp --texture-size 1024 --simplify true --simplify-ratio 0.15 --simplify-error 0.003 >/dev/null
@@ -28,6 +27,10 @@ import json, sys; p, name, i, scale = sys.argv[1:]
 json.dump({"name": name + ", HY-World", "visual": f"{i}-visual.glb", "visualMobile": f"{i}-visual-m.glb", "collision": f"{i}-coll.glb",
            "scale": float(scale), "rotate": [0, 0, 0], "offset": [0, 0, 0]}, open(p, "w")); open(p, "a").write("\n")
 PY
+# pits (floor a player can drop into and never climb out of) filled in the collision: a lid on a small hole, a barrier
+# along a large lower area; the check below then fails the map if any are left
+step "pits"; (cd "$T" && node fillpits.mjs "$W/coll-raw.glb" "$W/$ID.json" "$W/coll-fill.glb") || { echo "NOT PLAYABLE: pits could not be filled"; exit 1; }
+"$GT" meshopt "$W/coll-fill.glb" "$W/$ID-coll.glb" >/dev/null
 step "install + check"; for f in "$ID-coll.glb" "$ID-visual.glb" "$ID-visual-m.glb" "$ID.json"; do install -m 644 "$W/$f" "$MAPS/$f"; done
 if ! (cd "$T" && node check.mjs "$ID"); then
   echo "NOT PLAYABLE: map files removed, nothing added to the rotation"; rm -f "$MAPS/$ID".json "$MAPS/$ID"-coll.glb "$MAPS/$ID"-visual.glb "$MAPS/$ID"-visual-m.glb; exit 1; fi

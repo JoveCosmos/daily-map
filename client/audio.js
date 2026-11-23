@@ -46,15 +46,18 @@ function echoTail(kind) { const room = kind === "room", len = room ? 1.3 : .9, n
 /* recorded sound (2026-11-16): real gunshots from The Free Firearm Sound Library and airsoft reloads, both CC0 (SOUNDS.md).
    Each class of gun has two near takes (your own and close shots) and two far ones (the range's echo kept); a shot picks one
    and varies its pitch a little, so an automatic never repeats itself. Until a clip is in, the synthesized sound plays */
-const CLIPS = {}, CLIP_BASE = ["rifle_ak", "rifle_m4", "pistol_9", "pistol_45", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "sniper_3006", "sniper_300"];
+const CLIPS = {}, CLIP_BASE = ["ak", "m4", "glock", "usp", "deagle", "rifle_ak", "rifle_m4", "pistol_9", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "sniper_3006", "sniper_300"];
 const CLIP_NAMES = [...CLIP_BASE.flatMap(b => [b + "_near1", b + "_near2", b + "_far1", b + "_far2"]), "mag_out", "mag_in", "slide", "charge", "bolt_back", "bolt_fwd", "click",
-  "step1", "step2", "step3", "step4", "step5", "step6", "boom1", "boom2", "boom3", "pop"];
+  "step1", "step2", "step3", "step4", "step5", "step6", "boom1", "boom2", "boom3", "pop", "knife_slash1", "knife_slash2", "knife_draw"];
 let clipsAsked = false;
 function loadClips() { if (clipsAsked || !AC) return; clipsAsked = true;
   for (const n of CLIP_NAMES) fetch("sounds/" + n + ".mp3").then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => AC.decodeAudioData(b)).then(buf => { CLIPS[n] = buf; }).catch(() => {}); }
-/* which recording each gun uses and at what pitch: one recording per class, pitched apart so guns of a class differ */
-const GUNCLIP = { ak: ["rifle_ak", 1], galil: ["rifle_ak", 1.06], sg553: ["rifle_ak", .96], negev: ["rifle_ak", .88], m4: ["rifle_m4", 1], famas: ["rifle_m4", 1.07], aug: ["rifle_m4", .95],
-  glock: ["pistol_9", 1.04], p250: ["pistol_9", .94], tec9: ["pistol_9", 1.1], cz75: ["pistol_380", .97], fiveseven: ["pistol_380", 1.08], deagle: ["pistol_45", .8],
+/* which recording each gun uses and at what pitch. The guns we draw have their own (2026-11-23, sounds/SOUNDS.md): the
+   real AK pitched down with its chest thump and bark, the real AR-15 lean and cracking for the M4, a 9 mm for the Glock,
+   the same shot muffled to a suppressed thud for the USP-S, a .45 pitched down and heavy for the Deagle. The rest share a
+   recording per class, pitched apart */
+const GUNCLIP = { usp: ["usp", 1], ak: ["ak", 1], galil: ["rifle_ak", 1.06], sg553: ["rifle_ak", .96], negev: ["rifle_ak", .88], m4: ["m4", 1], famas: ["rifle_m4", 1.07], aug: ["rifle_m4", .95],
+  glock: ["glock", 1], p250: ["pistol_9", .94], tec9: ["pistol_9", 1.1], cz75: ["pistol_380", .97], fiveseven: ["pistol_380", 1.08], deagle: ["deagle", 1],
   mp9: ["smg_9", 1.07], mp7: ["smg_9", 1.13], p90: ["smg_9", 1.18], mac10: ["smg_ppsh", 1.05], ump: ["smg_ppsh", .92],
   nova: ["shotgun_nova", 1], xm1014: ["shotgun_cd", 1.04], awp: ["sniper_3006", .94], ssg08: ["sniper_300", 1.06] };
 function playClip(name, vol, rate = 1, to = dest()) { const b = CLIPS[name]; if (!AC || !b) return false;
@@ -64,6 +67,7 @@ function gunClip(w, vol, near) { const c = GUNCLIP[w]; if (!c) return false; con
   if (!playClip(name, vol * (near ? .85 : 1.05), c[1] * (.97 + Math.random() * .06))) return false;
   if (!SND && VERB) playClip(name, vol * .12, c[1], VERB);   // your own shot rings off the street a little too
   if (c[0].startsWith("sniper")) sniperWeight(name, vol, near, c[1]);
+  if (w === "usp" && near) playClip("click", vol * .25, 1.15);   // a suppressor leaves the slide audible
   return true; }
 /* the heavy sniper (2026-11-22): the recording alone is a short crack, so it gets a chest punch, its own echo rolling back
    from the far walls (the shot itself through a darkening feedback delay, panned side to side) and a long low rumble,
@@ -100,7 +104,7 @@ const GUNSND = { m4a1s: { len: .12, lp: 1100, gain: .38, thump: 90 }, zeus: { le
                  xm1014: { len: .3, lp: 1400, gain: 1.4, thump: 65 }, negev: { len: .12, lp: 2200, gain: .9, thump: 100 }, ssg08: { len: .2, lp: 2600, gain: 1.15, thump: 85 },
                  usp: { len: .09, lp: 900, gain: .32, thump: 0 }, glock: { len: .1, lp: 3400, gain: .55, thump: 160 }, deagle: { len: .26, lp: 1700, gain: 1.3, thump: 75 },
                  mp9: { len: .09, lp: 3000, gain: .6, thump: 150 }, mac10: { len: .09, lp: 2700, gain: .62, thump: 140 }, nova: { len: .34, lp: 1300, gain: 1.5, thump: 60 } };
-function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (WEAPONS[w] && (WEAPONS[w].nade || WEAPONS[w].c4)) return; if (w === "knife") return swish(vol);
+function gunSound(w, vol = 1, near = true) { const t = TONE[w] || TONE.ak; if (WEAPONS[w] && (WEAPONS[w].nade || WEAPONS[w].c4)) return; if (w === "knife") { swish(vol * (CLIPS.knife_slash1 ? .55 : 1)); playClip("knife_slash" + (Math.random() < .5 ? 1 : 2), vol * .7, .95 + Math.random() * .1); return; }   // the air, then the real blade (SOUNDS.md)
   if (gunClip(w, vol, near)) { if ((w === "awp" || w === "ssg08") && near && !SND) { setTimeout(() => playClip("bolt_back", .55, 1), 420); setTimeout(() => playClip("bolt_fwd", .55, 1), 640); } return; }   // the bolt after your own shot
   if (w === "awp") return sniperSound(vol, near);
   const P = GUNSND[w]; if (!P) return shot(vol * t[0], t[1]);

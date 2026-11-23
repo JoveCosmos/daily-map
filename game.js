@@ -1,4 +1,4 @@
-/* Daily Map PoC, multiplayer client. The server decides everything; this page predicts its own player so input
+/* Newground, multiplayer client. The server decides everything; this page predicts its own player so input
    feels instant (move and shoot locally, then reconcile with each snapshot by replaying the commands the server has
    not confirmed), and draws everyone else 100 ms in the past, interpolated between snapshots. Shots carry the
    view time they were aimed in, so the server can rewind the others to what this screen showed (lag compensation). */
@@ -267,7 +267,7 @@ function feed(html, cls = "") { const d = document.createElement("div"); d.class
 const nameOf = id => id === myId ? "You" : (roster.get(id) || {}).name || "#" + id;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-let flash = 0, kick = 0, bob = 0, swing = 0, shake = 0, fovPunch = 0;
+let KICKW = {}, flash = 0, kick = 0, bob = 0, swing = 0, shake = 0, fovPunch = 0;
 const recoilFx = (f, k) => { flash = f; kick = k(kick); };   // a shot's muzzle flash and kick (the killcam's gun)
 let DRAWK = 0;   // the draw's progress, 1 at its start to 0 when the gun is up
 /* ── the network ─────────────────────────────────────────────────────────────── */
@@ -424,7 +424,7 @@ function tickInput() {
   else if (s) {   // the predicted shot: tracer, decal and sound now; the damage is the server's to decide
     const o = new THREE.Vector3(me.pos.x, me.pos.y + eye(me), me.pos.z), aw = me.w === "awp";
     for (const d of s.dirs || [s.dir]) { const h = W.first(o, d, 300); tracer(gunTip(), o.clone().addScaledVector(d, h ? h.distance : 300), aw); if (h) { decal(h, d); puff(h.point, 0xb8a888, aw ? 14 : 6, aw ? .18 : .1); const nrm = h.face.normal.clone(); if (nrm.dot(d) > 0) nrm.negate(); sparks(h.point, nrm, aw ? 10 : 5); } } gunSound(me.w, 1);
-    if (!(WEAPONS[me.w] || {}).shell && me.w !== "zeus") ejectShell(); if (muzzleLight) { muzzleLight.position.copy(gunTip()); muzzleLight.intensity = aw ? 60 : 30; } flash = aw ? .09 : .045; kick = aw ? 4 : 1; if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
+    if (!(WEAPONS[me.w] || {}).shell && me.w !== "zeus") ejectShell(); if (muzzleLight) { muzzleLight.position.copy(gunTip()); muzzleLight.intensity = aw ? 60 : 30; } { const F = WEAPONS[me.w] || {}; flash = F.fl ?? .045; kick = F.vk ?? 1; KICKW = F; } if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
   }
   pending.push(cmd); outbox.push(cmd); if (pending.length > 256) pending.shift();
 }
@@ -543,7 +543,7 @@ function render(dt) {
   $("ammo").style.visibility = spec || kc ? "hidden" : "";
   $("spec").hidden = !spec && !kc; if (kc && KC.hl) $("spec").innerHTML = `<small>Highlight</small> ${esc(nameOf(KC.rec.by))} <span>${esc(KC.hl.title)}</span>`; else if (kc) $("spec").innerHTML = `<small>Killcam</small> ${esc(nameOf(KC.rec.by))} <span>${esc((WEAPONS[KC.w] || {}).name || "")}</span>`; else if (spec) $("spec").innerHTML = `<small>Spectating</small> ${esc(nameOf(spec.id))} <span>${spec.hp ?? ""}${spec.hp != null ? " HP" : ""}</span> <span>${esc((WEAPONS[spec.w] || {}).name || "")}</span>`;
   if (shake > 0) { const a = shake * shake * .035; camera.rotation.x += (Math.random() - .3) * a; camera.rotation.y += (Math.random() - .5) * a; camera.rotation.z += (Math.random() - .5) * a * .6; shake = Math.max(0, shake - dt * 3.2); }
-  const sp = Math.hypot(me.vel.x, me.vel.z); bob += dt * sp * 1.7; kick = Math.max(0, kick - dt * (kick > 1.5 ? 9 : 14)); fovPunch = Math.max(0, fovPunch - dt * 6); flash = Math.max(0, flash - dt);
+  const sp = Math.hypot(me.vel.x, me.vel.z); bob += dt * sp * 1.7; kick = Math.max(0, kick - dt * (KICKW.vkr ?? (kick > 1.5 ? 9 : 14))); fovPunch = Math.max(0, fovPunch - dt * 6); flash = Math.max(0, flash - dt);
   const W0 = wpn(me), scoped = !!(W0.zoom && me.zoom), deploying = me.clock < me.deployUntil;
   for (const w of WIDS) VIEW[w].visible = w === (kc ? KC.w : spec ? spec.w : me.w);
   swing = Math.max(0, swing - dt * 5);
@@ -552,14 +552,14 @@ function render(dt) {
   swayX *= Math.exp(-dt * 8); swayY *= Math.exp(-dt * 8);
   const rl = me.reloadAt ? clamp((me.reloadAt - me.clock) / (W0.reload || 2), 0, 1) : 0, dip = Math.sin(rl * Math.PI);   // the reload: down, tilted, back up
   gun.position.x -= swayX; gun.position.y += swayY - dip * .09;
-  gun.rotation.set(swing * .9 + dip * .5 + (kick > 1.5 ? kick * .07 : 0), swing * .6 - swayX * 2, dip * .6);
+  gun.rotation.set(swing * .9 + dip * .5 + kick * (KICKW.rise ?? (kick > 1.5 ? .07 : 0)), swing * .6 - swayX * 2, dip * .6 + kick * (KICKW.roll || 0));   // each gun its own climb and twist (sim.js FEEL)
   /* the draw (2026-11-22): the gun comes up from below the screen, muzzle low and rolled in, and settles; the hands close
      on it as it arrives (poseArms reads DRAWK). Was a fixed 12 cm drop for the whole deploy time */
   DRAWK = deploying && !kc && !spec ? clamp((me.deployUntil - me.clock) / ((W0.deploy || .5) * .9), 0, 1) : 0;
   if (DRAWK) { const e = DRAWK * DRAWK * (3 - 2 * DRAWK); gun.position.y -= e * .26; gun.position.z += e * .06; gun.rotation.x -= e * .7; gun.rotation.z += e * .45; }
   if (inspectT > 0) { inspectT = Math.max(0, inspectT - dt); const k = Math.sin((1 - inspectT / 2.2) * Math.PI); gun.rotation.y += k * 1.1; gun.rotation.z += k * .5; gun.position.x -= k * .05; gun.position.y += k * .03; }
   if (me.alive) { const st = me.w + "|" + (me.reloadAt ? 1 : 0) + "|" + (me.cock ? 1 : 0) + "|" + (me.landed ? 1 : 0), p0 = SNDST.last.split("|");
-    if (SNDST.last && p0[0] !== me.w) clack(.3, 3200);                                  // a draw
+    if (SNDST.last && p0[0] !== me.w) { if (me.w === "knife" && CLIPS.knife_draw) playClip("knife_draw", .45, 1); else clack(.3, 3200); }                                  // a draw
     if (SNDST.last && p0[1] === "0" && me.reloadAt) reloadSound(.55, me.w);
     if (SNDST.last && p0[2] === "0" && me.cock) pinSound(1);
     if (SNDST.last && p0[3] === "0" && me.landed) step(.75, true);                          // the landing
@@ -698,7 +698,7 @@ async function loadStats() {
    run the page comes back here with the result and a Share button (the phone's share sheet, else the clipboard) */
 const fmtT = t => t == null ? "-" : Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0");
 let DCRES = (() => { try { const r = JSON.parse(sessionStorage.getItem("dcres") || "null"); return r && Date.now() - r.at < 600000 ? r : null; } catch (e) { return null; } })();
-function dcShareText(r) { return `Daily Map challenge #${r.day}, ${r.map}\n${fmtT(r.t)} (${r.k} kills, ${r.d} ${r.d === 1 ? "death" : "deaths"}, ${r.hs} headshots)\n${r.counted ? `#${r.rank} of ${r.of} today` : "practice run"}\n${location.origin + location.pathname}`; }
+function dcShareText(r) { return `Newground challenge #${r.day}, ${r.map}\n${fmtT(r.t)} (${r.k} kills, ${r.d} ${r.d === 1 ? "death" : "deaths"}, ${r.hs} headshots)\n${r.counted ? `#${r.rank} of ${r.of} today` : "practice run"}\n${location.origin + location.pathname}`; }
 async function loadDc() {
   const nm = $("name").value.trim(); let r = null; try { r = await fetch("challenge?name=" + encodeURIComponent(nm), { cache: "no-store" }).then(x => x.json()); } catch (e) {}
   const el = $("lbDc"); if (!r) { el.innerHTML = `<p class="none">The challenge is not available right now</p>`; return; }

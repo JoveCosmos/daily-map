@@ -30,7 +30,7 @@ function rebuildViews() { for (const w of WIDS) { const was = VIEW[w].visible; g
    they follow recoil, bob and sway. The shoulders sit forward under the gun, out of sight: the gun is drawn at .62 of
    its size .42 m ahead, and arms of the same scale only reach it from there (the usual viewmodel trick) */
 const ARMSET = { scale: .72, at: new THREE.Vector3(.06, -.36, -.33), yaw: .35, right: [.03, -.07, .06],
-  rifle: { fingers: [1, .25, 0], palm: [0, 1, 0], at: hold => [-.045, -.045, -hold] }, pistol: { fingers: [.3, -.3, -1], palm: [1, 0, 0], at: () => [-.04, -.08, .03] } };
+  rifle: { fingers: [1, .25, 0], palm: [0, 1, 0], at: hold => [-.045, -.045, -hold] }, pistol: { fingers: [.3, -.3, -1], palm: [1, 0, 0], at: () => [-.028, -.075, .025], curl: 1.2 } };
 /* reload keyframes for the left hand, [time 0..1 of the reload, "home" or { at, fingers, palm }] in the gun's space: a
    rifle's hand goes to the magazine, pulls it out of sight, brings one up, seats it, works the charging handle, goes
    back; a pistol's support hand drops, brings a magazine to the grip, racks the slide; a shotgun's thumbs a shell in */
@@ -38,7 +38,13 @@ const ARMSET = { scale: .72, at: new THREE.Vector3(.06, -.36, -.33), yaw: .35, r
   ARMSET.rifleReload = [[0, "home"], [.14, mag], [.3, low], [.48, low], [.62, mag], [.72, mag], [.82, { at: [.05, .07, .04], fingers: [-1, 0, -.2], palm: [-1, 0, 0] }], [.94, "home"], [1, "home"]];
   ARMSET.pistolReload = [[0, "home"], [.15, { at: [-.06, -.45, .06], fingers: [0, 1, 0], palm: [1, 0, 0] }], [.45, { at: [-.04, -.3, .05], fingers: [0, 1, 0], palm: [1, 0, 0] }],
     [.6, { at: [-.02, -.15, .03], fingers: [0, 1, -.2], palm: [1, 0, 0] }], [.76, { at: [-.03, .05, .09], fingers: [0, -.3, -1], palm: [1, 0, 0] }], [.86, { at: [-.03, .05, .02], fingers: [0, -.3, -1], palm: [1, 0, 0] }], [1, "home"]];
-  ARMSET.shells = [[0, "home"], [.35, { at: [-.03, -.08, -.08], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [.6, { at: [-.01, -.05, -.02], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [1, "home"]]; }
+  /* the right hand per kind of thing held (2026-11-23): a gun's grip hangs below its bore, but a knife's handle runs along
+     the blade's line and a grenade sits round the origin, so one gun target left the hand floating under them */
+  ARMSET.grip = { gun: { at: ARMSET.right, fingers: [-.25, -.15, -1], palm: [-1, 0, 0] },
+    knife: { at: [.028, .004, .06], fingers: [-.25, -1, -.1], palm: [-1, 0, 0] },
+    nade: { at: [.045, -.005, .03], fingers: [-.25, -.15, -1], palm: [-1, 0, 0] },
+    c4: { at: [.085, -.01, .03], fingers: [-.25, -.15, -1], palm: [-1, 0, 0] } };
+  ARMSET.shells =[[0, "home"], [.35, { at: [-.03, -.08, -.08], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [.6, { at: [-.01, -.05, -.02], fingers: [.3, .6, -.6], palm: [1, .3, 0] }], [1, "home"]]; }
 if (!params.has("codeguns")) loadGunModels(gltf()).then(got => { if (got.length) rebuildViews(); });
 loadFighters(gltf()).then(n => { if (!n) return; for (const o of others.values()) reskin(o.model, o.team, o.named); for (const m of KC.temps.values()) { scene.remove(m.g); dispose(m.g); } KC.temps.clear(); });
 let ARMS_T = [null, null];   // each team's arms (models.js makeArms); ARMS is whichever is in use
@@ -54,7 +60,7 @@ function poseArms(w) {
   vm.updateWorldMatrix(true, false); vm.getWorldQuaternion(_q); camera.getWorldQuaternion(_cq);
   const gd = a => new THREE.Vector3(...a).applyQuaternion(_q), cd = a => new THREE.Vector3(...a).applyQuaternion(_cq), hold = HOLD[w] && HOLD[w][1];
   const kind = hold == null ? null : hold < .06 ? ARMSET.pistol : ARMSET.rifle, W0 = WEAPONS[w] || {};
-  let lp = kind && kind.at(hold), lf = kind && kind.fingers, ln = kind && kind.palm; let gripL = .8;   // the left hand's curl: wraps the handguard, closes tighter on a magazine or a shell
+  let lp = kind && kind.at(hold), lf = kind && kind.fingers, ln = kind && kind.palm; let gripL = kind && kind.curl || .8;   // the left hand's curl: wraps the handguard, closes tighter on a magazine or a shell
   // a reload (2026-11-16): the left hand works the gun along keyframes over the gun's own reload time
   if (kind && me.reloadAt && me.w === w) { const r = W0.shell || W0.reload || 2, p = W0.shell ? 1 - ((me.reloadAt - me.clock) / r % 1 + 1) % 1 : clamp(1 - (me.reloadAt - me.clock) / r, 0, 1);
     const keys = W0.shell ? ARMSET.shells : kind === ARMSET.pistol ? ARMSET.pistolReload : ARMSET.rifleReload, home = { at: lp, fingers: lf, palm: ln };
@@ -62,10 +68,11 @@ function poseArms(w) {
     const A = keys[i], B = keys[Math.min(i + 1, keys.length - 1)], k = B[0] > A[0] ? THREE.MathUtils.smoothstep(p, A[0], B[0]) : 1;
     const pick = (K, f) => K[1] === "home" ? home[f] : K[1][f], mix = f => pick(A, f).map((x, j) => x + (pick(B, f)[j] - x) * k);
     lp = mix("at"); lf = mix("fingers"); ln = mix("palm");
-    const off = f => f[1] === "home" ? 0 : 1, held = off(A) + (off(B) - off(A)) * k; gripL = .8 + held * .45; }
+    const off = f => f[1] === "home" ? 0 : 1, held = off(A) + (off(B) - off(A)) * k; gripL = (kind.curl || .8) + held * .45; }
   const left = kind ? { at: vm.localToWorld(_v.set(...lp).clone()), fingers: gd(lf), palm: gd(ln), pole: cd([-1, -1, .2]) }
     : { at: camera.localToWorld(new THREE.Vector3(-.3, -.75, -.25)), fingers: cd([0, -1, 0]), palm: cd([1, 0, 0]), pole: cd([-1, -1, 0]) };   // one-handed: the left arm drops out of sight
-  ARMS.pose({ at: vm.localToWorld(_v.set(...ARMSET.right).clone()), fingers: gd([-.25, -.15, -1]), palm: gd([-1, 0, 0]), pole: cd([1, -1, .2]) }, left,
+  const R = ARMSET.grip[w] || ARMSET.grip[W0.nade ? "nade" : ""] || ARMSET.grip.gun;
+  ARMS.pose({ at: vm.localToWorld(_v.set(...R.at).clone()), fingers: gd(R.fingers), palm: gd(R.palm), pole: cd([1, -1, .2]) }, left,
     { curl: ((WEAPONS[w] || {}).melee ? 1.05 : .9) * (1 - DRAWK * .6), thumb: .4, curlL: gripL * (1 - DRAWK * .8), thumbL: .3 });
 }   // the imported guns, once they are in (models.js IMPORTED); ?codeguns compares the old ones
 const muzzle = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);

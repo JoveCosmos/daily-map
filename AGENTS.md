@@ -1,4 +1,9 @@
-# Working on Daily Map
+# Working on NG - Newground
+
+**How we work:** one thing at a time, finished from start to end against its checklist in `CHECKLISTS.md` (a gun has
+11 stages, from its model to the operator playing it), and it stays switched off until then: guns in `sim.js` `OFF`
+(nothing hands them out: pickups, buying, bots, the Gun Game ladder), modes as `hidden` cards in the menu. Do not open
+new features beside the one in progress.
 
 Notes for anyone changing this code, by hand or with a coding assistant: how the pieces fit, the rules that keep
 multiplayer correct, and the traps that already cost time once. Read it before the first change.
@@ -87,8 +92,9 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **A dropped connection rejoins by reloading.** The page saves a "rejoin" note and reloads straight back into the
   room; do not try to rebuild a game on a dead socket.
 - **Generated maps have holes and pockets.** Spawns skip points with a ceiling close above or walls on most sides, a
-  step with no ground within 6.5 m below is refused, and anyone 4 m below the map is respawned. Pits a player cannot
-  climb out of are not detected yet: that is why K (respawn if stuck) exists.
+  step with no ground within 6.5 m below is refused, and anyone 4 m below the map is respawned. Holes and pits are filled in
+  the collision when a map is added (`tools/fillpits.mjs`, shared finder `tools/pits.mjs`); K (respawn if stuck) stays
+  as the last resort.
 - **Phones are a different machine.** They load a lighter visual (`visualMobile`), start without shadows, and judge
   performance by real frame time. Test touch in landscape: a look-drag that starts on a button presses it.
 - **The HUD ignores the pointer.** `#hud` has `pointer-events: none` so overlays never block play; a panel with

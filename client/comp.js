@@ -1,6 +1,6 @@
 /* Competitive: the buy menu, grenade lineups, the bomb sites and the bomb (split out of game.js 2026-11-22) */
 import * as THREE from "three";
-import { WEAPONS, viewDir, clamp } from "../sim.js";
+import { WEAPONS, viewDir, clamp, OFF } from "../sim.js";
 import { TOUCH, renderer, $, scene, camera, nowS } from "./core.js";
 import { dotTex } from "./fx.js";
 import { AC, dest, at } from "./audio.js";
@@ -12,7 +12,7 @@ const PRICE = { glock: [200, 1], usp: [200, 0], p250: [300], fiveseven: [500, 0]
                 galil: [1800, 1], famas: [2050, 0], ak: [2700, 1], m4: [3100, 0], m4a1s: [2900, 0], sg553: [3000, 1], aug: [3300, 0], ssg08: [1700], awp: [4750],
                 vest: [650], vesthelm: [1000], he: [300], flash: [200], smoke: [300], molotov: [400, 1], incendiary: [600, 0], decoy: [50], kit: [400, 0], zeus: [200] };   // same as server.js
 const BUYCATS = [["Pistols", ["usp", "glock", "p250", "fiveseven", "tec9", "cz75", "deagle"]], ["SMGs", ["mp9", "mac10", "mp7", "ump", "p90"]], ["Heavy", ["nova", "xm1014", "negev"]],
-                 ["Rifles", ["famas", "galil", "m4", "m4a1s", "ak", "sg553", "aug", "ssg08", "awp"]], ["Gear", ["vest", "vesthelm", "kit", "zeus"]], ["Grenades", ["flash", "smoke", "he", "molotov", "decoy"]]];
+                 ["Rifles", ["famas", "galil", "m4", "m4a1s", "ak", "sg553", "aug", "ssg08", "awp"]], ["Gear", ["vest", "vesthelm", "kit", "zeus"]], ["Grenades", ["flash", "smoke", "he", "molotov", "decoy"]]].map(([c, l]) => [c, l.filter(w => !OFF.has(w))]).filter(([, l]) => l.length);   // guns switched off (sim.js OFF) left out
 const BUY = { open: false, cat: -1, free: false };
 let SITES_C = [], lastMo = null, moFlash = 0, lastBeep = 0;
 const itemName = it => ({ vest: "Kevlar", vesthelm: "Kevlar + helmet", kit: "Defuse kit", molotov: myTeam === 0 ? "Incendiary" : "Molotov" })[it] || (WEAPONS[it] || {}).name || it;

@@ -332,7 +332,16 @@ export function makeArms(sleeve, team = 0) {
   // dress: the team's sleeve, darkened to a glove where the hand bones carry the skin. A colour per vertex, so the cuff
   // blends across the wrist (whole triangles to one material or the other left a saw-tooth edge, 2026-11-16)
   const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = mesh.skeleton.bones, n = si.count, col = new Float32Array(n * 3);
-  if (own) { mesh.frustumCulled = false; mesh.castShadow = false; mesh.material.roughness = Math.max(mesh.material.roughness, .6); }
+  if (own) { mesh.frustumCulled = false; mesh.castShadow = false; mesh.material.roughness = Math.max(mesh.material.roughness, .6);
+    /* 2026-11-23: the generated hands survived the cut in fitarms.py, skinned stiff to the forearms: ~1300 vertices a side
+       past the wrist, drawn as flat grey slabs over the rigged glove (no curl, the hand looked unwired; on the knife a
+       "second blade"). With the Glove mesh in, drop every sleeve triangle that reaches past the wrist (bind pose) */
+    if (extra.length && g.index) { const p = g.attributes.position, past = new Uint8Array(n), v = new THREE.Vector3();
+      const at = nm => { const i = bones.findIndex(b => b.name === nm); return i < 0 ? null : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert()); };
+      for (const k of ["R", "L"]) { const a = at("forearm" + k), e = at("forearm" + k + "_end"); if (!a || !e) continue; const ax = e.sub(a), L2 = ax.lengthSq();
+        for (let i = 0; i < n; i++) { v.fromBufferAttribute(p, i).applyMatrix4(mesh.bindMatrix).sub(a); const t = v.dot(ax) / L2; if (t > 1.02 && v.addScaledVector(ax, -t).length() < .2) past[i] = 1; } }
+      const ix = g.index.array, keep = []; for (let t = 0; t < ix.length; t += 3) if (!past[ix[t]] && !past[ix[t + 1]] && !past[ix[t + 2]]) keep.push(ix[t], ix[t + 1], ix[t + 2]);
+      g.setIndex(keep); } }
   else for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
     col.fill(1 - .89 * THREE.MathUtils.smoothstep(hw, .35, .75), v * 3, v * 3 + 3); }   // 1 on the sleeve, .11 (a dark glove) on the hand
   if (!own) { g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.clearGroups();

@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex">
-<title>Daily Map PoC</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%22-2%20-2%2028%2028%22%3E%3Crect%20x%3D%22-2%22%20y%3D%22-2%22%20width%3D%2228%22%20height%3D%2228%22%20rx%3D%226%22%20fill%3D%22%230c1113%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%227.4%22%20fill%3D%22%2316201f%22/%3E%3CclipPath%20id%3D%22CL%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%226.6%22/%3E%3C/clipPath%3E%3Cg%20clip-path%3D%22url%28%23CL%29%22%20fill%3D%22none%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%22.55%22%20stroke-width%3D%221%22%3E%3Cpath%20d%3D%22M3%209.5c3-2.2%205.5%201.2%208.5-.6s5.5-2.4%209.5.3%22/%3E%3Cpath%20d%3D%22M3%2014.6c3.4-1.8%205.6%201.4%209-.4s5.2-2%209%20.6%22/%3E%3C/g%3E%3Cpath%20d%3D%22M3.66%209.92A8.6%208.6%200%200%201%209.92%203.66M9.92%2020.34A8.6%208.6%200%200%201%203.66%2014.08%22%20fill%3D%22none%22%20stroke%3D%22%234f86d9%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M14.08%203.66A8.6%208.6%200%200%201%2020.34%209.92M20.34%2014.08A8.6%208.6%200%200%201%2014.08%2020.34%22%20fill%3D%22none%22%20stroke%3D%22%23e0a14a%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M12%20.8v3.4M12%2019.8v3.4M.8%2012h3.4M19.8%2012h3.4%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.7%22%20fill%3D%22%23ffffff%22/%3E%3C/svg%3E">
+<title>NG - Newground</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%22-3%20-11%2046%2046%22%3E%3Crect%20x=%22-3%22%20y=%22-11%22%20width=%2246%22%20height=%2246%22%20rx=%229%22%20fill=%22%2316201f%22/%3E%3Cdefs%3E%3Cmask%20id=%22c%22%3E%3Crect%20x=%22-1%22%20y=%22-1%22%20width=%2242%22%20height=%2226%22%20fill=%22%23fff%22/%3E%3Cpath%20d=%22M-1%2016.6%2041%209.4%22%20stroke=%22%23000%22%20stroke-width=%221.7%22/%3E%3C/mask%3E%3C/defs%3E%3Cg%20mask=%22url%28%23c%29%22%20fill=%22%23e9efe9%22%3E%3Cpath%20d=%22M2%2020V4h4.5l7.5%2010.5V4h3.5v16H13L5.5%209.5V20Z%22/%3E%3Cpath%20d=%22M37.5%204H21v16h16.5v-9H29v3h5v2.5h-9.5v-9h13Z%22/%3E%3C/g%3E%3C/svg%3E">
 <style>
 :root{--ink:#eef2ee;--dim:#9fb0a6;--hud:rgba(10,14,12,.55);--line:rgba(255,255,255,.14);--teal:#3fd0b0;--red:#ff5a4a;--amber:#ffb02e}
 *{box-sizing:border-box}
@@ -105,7 +105,7 @@ body.touch .keys{display:block}
 .mn>.today{margin-top:auto}
 .mn:after{content:"";flex:none;height:18px;margin-top:auto}
 .brand{display:flex;align-items:center;gap:9px;white-space:nowrap;position:relative;z-index:5;font:800 13px/1 ui-sans-serif,system-ui;letter-spacing:.22em;color:#e9efe9}
-.brand .mark{width:24px;height:24px;flex:none}.brand .wm{display:flex;gap:.45em}.brand .wm span{font-weight:500;opacity:.78}.brand .wm b{font-weight:850}   /* a sight on the two sides: Atlas blue, Ember orange (2026-11-17) */
+.brand .mark{width:44px;height:26px;flex:none}.brand .wm{display:flex;gap:.45em}.brand .wm span{font-weight:500;opacity:.78}.brand .wm b{font-weight:850}   /* NG, block letters with a stencil cut across them like a horizon; the name spelled small beside it (2026-11-23) */
 .today{display:grid;gap:10px}
 .eyebrow{font:700 11px/1 ui-monospace,monospace;letter-spacing:.3em;text-transform:uppercase;color:#7ee0bf}
 .next{font:500 14px/1.3 ui-sans-serif,system-ui;color:#a9b7b0;display:flex;align-items:center;gap:8px}
@@ -148,7 +148,7 @@ body.rt #money{display:none}   /* Retakes: nothing is bought */
 .modes{display:grid;gap:10px}.modes[hidden]{display:none}
 .mgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .mcard{display:grid;gap:3px;align-content:start;min-height:56px;padding:9px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(7,9,10,.5);backdrop-filter:blur(8px);color:#fff;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
-.mcard b{font:750 14.5px ui-sans-serif,system-ui}.mcard small{font:500 11.5px/1.35 ui-sans-serif,system-ui;color:#9fb0a8}
+.mcard[hidden],.joinrow[hidden]{display:none}.mcard b{font:750 14.5px ui-sans-serif,system-ui}.mcard small{font:500 11.5px/1.35 ui-sans-serif,system-ui;color:#9fb0a8}
 .mcard:hover,.mcard:focus-visible{border-color:#7ee0bf;background:rgba(126,224,191,.09);outline:none;transform:translateY(-1px)}
 .mcard.hot{grid-column:1/-1;border-color:rgba(126,224,191,.45);background:linear-gradient(180deg,rgba(126,224,191,.16),rgba(126,224,191,.05))}.mcard.hot b{font-size:16px}
 .you .pz2:not(:has(.leave:not([hidden]))),.you .status:empty,.you .play[hidden]{display:none}
@@ -424,7 +424,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
 <div id="start">
   <div class="bg" id="bg"></div>
   <main class="mn">
-    <div class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.4" fill="#16201f"/><clipPath id="CL"><circle cx="12" cy="12" r="6.6"/></clipPath><g clip-path="url(#CL)" fill="none" stroke="#e9efe9" stroke-opacity=".55" stroke-width="1"><path d="M3 9.5c3-2.2 5.5 1.2 8.5-.6s5.5-2.4 9.5.3"/><path d="M3 14.6c3.4-1.8 5.6 1.4 9-.4s5.2-2 9 .6"/></g><path d="M3.66 9.92A8.6 8.6 0 0 1 9.92 3.66M9.92 20.34A8.6 8.6 0 0 1 3.66 14.08" fill="none" stroke="#4f86d9" stroke-width="2.4" stroke-linecap="round"/><path d="M14.08 3.66A8.6 8.6 0 0 1 20.34 9.92M20.34 14.08A8.6 8.6 0 0 1 14.08 20.34" fill="none" stroke="#e0a14a" stroke-width="2.4" stroke-linecap="round"/><path d="M12 .8v3.4M12 19.8v3.4M.8 12h3.4M19.8 12h3.4" stroke="#e9efe9" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.7" fill="#e9efe9"/></svg><span class="wm"><span>DAILY</span><b>MAP</b></span><span class="online" id="online">&nbsp;</span><details class="keys"><summary>Settings</summary>
+    <div class="brand"><svg class="mark" viewBox="0 0 40 24" aria-hidden="true"><defs><mask id="ngcut"><rect x="-1" y="-1" width="42" height="26" fill="#fff"/><path d="M-1 16.6 41 9.4" stroke="#000" stroke-width="1.7"/></mask></defs><g mask="url(#ngcut)" fill="#e9efe9"><path d="M2 20V4h4.5l7.5 10.5V4h3.5v16H13L5.5 9.5V20Z"/><path d="M37.5 4H21v16h16.5v-9H29v3h5v2.5h-9.5v-9h13Z"/></g></svg><span class="wm"><span>NEWGROUND</span></span><span class="online" id="online">&nbsp;</span><details class="keys"><summary>Settings</summary>
       <div class="pad"><div class="sets">
           <label class="srow mouse-only"><span>Sensitivity</span><input type="range" id="setSens" min="0.3" max="12" step="0.05"><input type="number" class="snum" id="setSensN" min="0.1" max="30" step="0.01" aria-label="Sensitivity value"></label>
           <label class="srow touch-only"><span>Look speed</span><input type="range" id="setTsens" min="0.3" max="2.5" step="0.05"><output id="setTsensV"></output></label>
@@ -457,17 +457,19 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
       <span class="hint" id="sharehint">Friends open the link, or type the code under Join</span>
     </section>
     <!-- one way in, as CS (2026-11-17): pick a mode, set it up in its popup, start -->
+    <!-- one mode for now (operator 2026-11-23: easy entry, make one mode perfect first): only Today's match shows; the
+         other modes keep their code and come back by removing hidden -->
     <section class="modes" id="priv">
       <div class="mgrid" id="mgrid">
         <button type="button" class="mcard hot" data-m="public"><b>Today's match</b><small>Deathmatch on today's map with everyone online</small></button>
-        <button type="button" class="mcard" data-m="comp"><b>Competitive</b><small>5 v 5, the bomb, money, first to 9</small></button>
-        <button type="button" class="mcard" data-m="wing"><b>Wingman</b><small>2 v 2 on one bomb site</small></button>
-        <button type="button" class="mcard" data-m="gg"><b>Gun Game</b><small>Every kill hands you the next gun</small></button>
-        <button type="button" class="mcard" data-m="dm"><b>Deathmatch</b><small>Your own room, invite friends</small></button>
-        <button type="button" class="mcard" data-m="dc"><b>Challenge</b><small>8 kills against bots, fastest wins</small></button>
-        <button type="button" class="mcard" data-m="rt"><b>Retakes</b><small>The bomb is down: hold the site or retake it</small></button>
+        <button type="button" class="mcard" data-m="comp" hidden><b>Competitive</b><small>5 v 5, the bomb, money, first to 9</small></button>
+        <button type="button" class="mcard" data-m="wing" hidden><b>Wingman</b><small>2 v 2 on one bomb site</small></button>
+        <button type="button" class="mcard" data-m="gg" hidden><b>Gun Game</b><small>Every kill hands you the next gun</small></button>
+        <button type="button" class="mcard" data-m="dm" hidden><b>Deathmatch</b><small>Your own room, invite friends</small></button>
+        <button type="button" class="mcard" data-m="dc" hidden><b>Challenge</b><small>8 kills against bots, fastest wins</small></button>
+        <button type="button" class="mcard" data-m="rt" hidden><b>Retakes</b><small>The bomb is down: hold the site or retake it</small></button>
       </div>
-      <div class="joinrow"><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join a room</button></div>
+      <div class="joinrow" hidden><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join a room</button></div>
     </section>
   </main>
   <div class="msetup" id="msetup" hidden role="dialog" aria-modal="true" aria-labelledby="msTitle">
@@ -484,7 +486,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
     </div>
   </div>
   <aside class="lb" id="lb">
-    <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false">Challenge</button></div>
+    <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false" hidden>Challenge</button></div>
     <div class="lbp" id="lbToday">
       <span class="eyebrow">Today's best</span>
       <ol id="lbtop"></ol>

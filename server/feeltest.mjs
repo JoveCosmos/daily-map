@@ -153,4 +153,10 @@ const grounded = () => { const s = newPlayer(); s.pos.set(5, 0, 15); for (let i 
   const s = newPlayer(); s.armor = 100; s.helmet = true;
   check("an AK arm hit through armour = 27, as the chest", armour(s, WEAPONS.ak, "arm", damageFor(WEAPONS.ak, "arm", 0)) === 27); }
 
+// handling per gun (2026-11-23): every drawn gun has its own recovery and kick, and the classes keep their order
+{ const drawn = ["ak", "m4", "glock", "usp", "deagle", "mp9", "awp"], feel = w => ["rec", "pr", "vk", "vkr", "rise", "fl"].map(k => WEAPONS[w][k]);
+  check("every drawn gun has its own handling", drawn.every(w => feel(w).every(v => typeof v === "number")) && new Set(drawn.map(w => feel(w).join())).size === drawn.length);
+  const W = WEAPONS; check("AK settles slower and kicks harder than the M4", W.ak.rec > W.m4.rec && W.ak.pr < W.m4.pr && W.ak.vk > W.m4.vk && W.ak.rise > W.m4.rise);
+  check("Deagle flips most of the pistols, USP-S flashes least", W.deagle.rise > W.glock.rise && W.deagle.rise > W.usp.rise && W.usp.fl < W.glock.fl);
+  check("SMGs recover faster than rifles", W.mp9.rec < W.m4.rec && W.mp9.rec < W.ak.rec); }
 console.log(fails ? `${fails} FAILED` : "all passed"); process.exit(fails ? 1 : 0);

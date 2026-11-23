@@ -80,7 +80,43 @@ export const WEAPONS = {
   decoy:   { name: "Decoy", slot: "g", nade: true, speed: 245, deploy: .5 },
   c4:      { name: "C4", slot: "c", c4: true, speed: 250, deploy: .4 }     // Competitive's bomb (2026-11-14): planted by the server, not fired
 };
+/* handling, gun by gun (2026-11-23; was one feel for every gun): rec = seconds after the trigger is let go for a full
+   spray to reset (CS's recovery time: the AK's 7.62 kick is slow to settle, the M4 quicker, SMGs and small pistols
+   quickest, the Deagle slow); pr = how fast the view punch settles (per second, higher = snappier). Client only: vk = how
+   far the gun drives back into the hand, vkr = how fast it comes back, rise = the muzzle's climb (rad at full kick), roll
+   = its twist, fl = the flash's life (s). The guns we draw are tuned one by one; the rest take their class's feel */
+const FEEL = {
+  ak:     { rec: .46, pr: 7,  vk: 1.6, vkr: 10, rise: .11, roll: .05,  fl: .055 },   // heavy, slow thump, climbs and twists
+  m4:     { rec: .38, pr: 10, vk: 1.0, vkr: 15, rise: .06, roll: -.025, fl: .045 },   // flat, quick, buzzy
+  m4a1s:  { rec: .36, pr: 11, vk: .8,  vkr: 16, rise: .05, roll: -.02, fl: .02 },
+  aug:    { rec: .4,  pr: 10, vk: .9,  vkr: 14, rise: .05, roll: .02,  fl: .04 },
+  galil:  { rec: .44, pr: 8,  vk: 1.3, vkr: 12, rise: .09, roll: .04,  fl: .05 },
+  famas:  { rec: .38, pr: 10, vk: 1.0, vkr: 15, rise: .06, roll: -.03, fl: .045 },
+  sg553:  { rec: .42, pr: 9,  vk: 1.1, vkr: 13, rise: .07, roll: .03,  fl: .05 },
+  negev:  { rec: .6,  pr: 6,  vk: 1.2, vkr: 12, rise: .07, roll: .06,  fl: .055 },
+  mp9:    { rec: .28, pr: 13, vk: .6,  vkr: 19, rise: .035, roll: .02, fl: .035 },  // light, rattly, settles at once
+  mac10:  { rec: .3,  pr: 12, vk: .7,  vkr: 18, rise: .045, roll: -.04, fl: .04 },
+  mp7:    { rec: .28, pr: 13, vk: .6,  vkr: 19, rise: .035, roll: .02, fl: .035 },
+  ump:    { rec: .34, pr: 10, vk: .9,  vkr: 15, rise: .055, roll: -.03, fl: .045 },
+  p90:    { rec: .3,  pr: 12, vk: .6,  vkr: 18, rise: .035, roll: .02, fl: .035 },
+  glock:  { rec: .28, pr: 14, vk: .8,  vkr: 17, rise: .1,  roll: .03,  fl: .035 },   // snappy, little flip
+  usp:    { rec: .3,  pr: 13, vk: .7,  vkr: 15, rise: .09, roll: .02,  fl: .012 },   // soft push, almost no flash
+  p250:   { rec: .32, pr: 12, vk: 1.0, vkr: 15, rise: .12, roll: .03,  fl: .04 },
+  fiveseven: { rec: .3, pr: 13, vk: .8, vkr: 16, rise: .1, roll: -.02, fl: .035 },
+  tec9:   { rec: .3,  pr: 12, vk: .9,  vkr: 16, rise: .11, roll: -.04, fl: .04 },
+  cz75:   { rec: .32, pr: 12, vk: .8,  vkr: 17, rise: .08, roll: .03,  fl: .04 },
+  deagle: { rec: .55, pr: 6,  vk: 3.0, vkr: 7,  rise: .32, roll: .08,  fl: .07 },    // big flip, slow to come down
+  nova:   { rec: .5,  pr: 6,  vk: 2.8, vkr: 7,  rise: .2,  roll: .04,  fl: .08 },
+  xm1014: { rec: .45, pr: 7,  vk: 2.2, vkr: 9,  rise: .14, roll: .05,  fl: .07 },
+  ssg08:  { rec: .8,  pr: 7,  vk: 2.2, vkr: 10, rise: .16, roll: .03,  fl: .06 },
+  awp:    { rec: 1,   pr: 5,  vk: 4,   vkr: 9,  rise: .28, roll: .05,  fl: .09 },
+  zeus:   { rec: .5,  pr: 8,  vk: .6,  vkr: 12, rise: .05, roll: 0,    fl: .02 } };
+for (const [w, f] of Object.entries(FEEL)) Object.assign(WEAPONS[w], f);
 export const NADES = ["he", "flash", "smoke", "molotov", "decoy"];
+/* guns switched off for now (operator 2026-11-23: one mode, perfect each gun alone): those without a real model yet.
+   Their code and numbers stay; nothing hands them out (no pickup, no buy, no bot, no ladder) while they are in here */
+export const OFF = new Set(["zeus", "aug", "sg553", "m4a1s", "famas", "galil", "negev", "ssg08", "mac10", "mp7", "ump", "p90",
+  "p250", "fiveseven", "tec9", "cz75", "nova", "xm1014"]);
 export const WIDS = Object.keys(WEAPONS);                     // index <-> id on the wire
 export const DMG = { head: 36 * 4, body: 36, leg: 27 }, FIRE_INTERVAL = .1, RELOAD = 2.43, MAG = 30, RESERVE = 90;
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -343,7 +379,7 @@ export function weapon(s, cmd, t, seed) {
     if (W0.shell) { if (s.res > 0 && s.mag < W0.mag) { s.mag++; s.res--; } s.reloadAt = s.mag < W0.mag && s.res > 0 ? t + W0.shell : 0; }
     else { const n = Math.min(W0.mag - s.mag, s.res); s.mag += n; s.res -= n; s.reloadAt = 0; }
   }
-  if (t - s.lastShot > (W0.rate || .1)) { s.spray = Math.max(0, s.spray - DT * 30 / .42); const k = Math.exp(-DT * 9); s.punchX *= k; s.punchY *= k; }
+  if (t - s.lastShot > (W0.rate || .1)) { s.spray = Math.max(0, s.spray - DT * 30 / (W0.rec || .42)); const k = Math.exp(-DT * (W0.pr || 9)); s.punchX *= k; s.punchY *= k; }
   if (!s.alive) return null;
   if (W0.c4) { s.zoomHeld = !!cmd.zoom; return null; }   // the bomb: holding fire on a site plants it, which the server decides
   // a grenade: left click cocks a full throw, right click a lob, both together a medium one; it flies on release
