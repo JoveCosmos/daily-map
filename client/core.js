@@ -32,3 +32,11 @@ addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; cam
 export const TOUCH = params.has("touch") || matchMedia("(pointer: coarse)").matches;
 if (TOUCH) document.body.classList.add("touch");
 export const nowS = () => performance.now() / 1000;
+/* the mouse lock asks for raw input (audit 2026-11-23): the system's pointer acceleration off, as CS reads the mouse, so
+   the CS-scale sensitivity means the same turn per count. Where raw input is not offered the plain lock is taken */
+export function pointerLock() {
+  const el = renderer.domElement; let p;
+  try { p = el.requestPointerLock({ unadjustedMovement: true }); } catch (e) { p = null; }
+  if (p && p.catch) return p.catch(() => el.requestPointerLock());
+  return p === null ? el.requestPointerLock() : p;
+}

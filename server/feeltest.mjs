@@ -13,7 +13,7 @@ const grounded = () => { const s = newPlayer(); s.pos.set(5, 0, 15); for (let i 
 // spray spread: grows while spraying, gone again after a short pause
 { const s = grounded(); let t = 0; const base = inaccuracy(s) / DEG, seen = [];
   for (let i = 0; i < 64; i++) { t += DT; const sh = weapon(s, cmd({ fire: true }), t, i); if (sh) seen.push(inaccuracy(s) / DEG); }
-  const sprayed = inaccuracy(s) / DEG;
+  const sprayed = Math.max(...seen);   // right after a shot (the end of the loop falls a varying number of ticks after the last one)
   for (let i = 0; i < 32; i++) { t += DT; weapon(s, cmd(), t, 0); }
   const rested = inaccuracy(s) / DEG;
   check("AK spray spread grows", sprayed > base + 1.5, `standing ${base.toFixed(2)} deg, after ${seen.length} shots ${sprayed.toFixed(2)} deg`);
@@ -162,4 +162,47 @@ const grounded = () => { const s = newPlayer(); s.pos.set(5, 0, 15); for (let i 
 { const reset = (w, n) => { let x = n, t = 0; while (x > 0) { x *= Math.exp(-DT * 4.06 / WEAPONS[w].rec); if (x < .5) x = 0; t += DT; } return t; };
   const b = reset("ak", 3), f = reset("ak", 29);
   check("AK tap burst needs a pause, full spray resets in rec", b > .15 && b < .3 && Math.abs(f - WEAPONS.ak.rec) < .05, `3 shots ${b.toFixed(2)} s, 30 shots ${f.toFixed(2)} s`); }
+/* the whole gun, tick by tick as the game runs it (audit 2026-11-23): the checks above tested the pattern table and the
+   recovery curve apart, and passed while a held spray never left the pattern's first entries and the AK fired 549 a
+   minute. Here the trigger is held through weapon() one tick at a time, as the server and the page do */
+{ const hold = (w, n) => { const s = grounded(); equip(s, w); let t = 1; const at = [], kick = [];
+    for (let i = 0; i < 64 * 8 && at.length < n; i++) { t += DT; if (weapon(s, cmd({ fire: true }), t, i)) { at.push(t); kick.push([s.punchX / DEG, s.punchY / DEG]); } }
+    return { s, at, kick, rpm: 60 * (at.length - 1) / (at[at.length - 1] - at[0]) }; };
+  for (const w of ["ak", "m4", "mp9"]) { const r = hold(w, 30), want = 60 / WEAPONS[w].rate;
+    check(`${w} held fires at its listed rate`, Math.abs(r.rpm - want) / want < .01, `${r.rpm.toFixed(0)} a minute, listed ${want.toFixed(0)}`); }
+  for (const w of ["ak", "m4"]) { const r = hold(w, 30), P = WEAPONS[w].spray, last = r.kick[29], end = P[P.length - 1];
+    check(`a held ${w} spray walks its whole pattern`, Math.abs(last[0] - end[0]) < 1e-6 && Math.abs(last[1] - end[1]) < 1e-6 && r.kick.every((k, i) => Math.abs(k[1] - P[Math.min(i, P.length - 1)][1]) < 1e-6),
+      `shot 30 kicks ${last[1].toFixed(2)} deg up, the pattern ends at ${end[1]}`); }
+  { const s = grounded(); equip(s, "ak"); let t = 1, n = 0;
+    for (let i = 0; i < 64 && n < 3; i++) { t += DT; if (weapon(s, cmd({ fire: true }), t, i)) n++; }
+    for (let i = 0; i < Math.round(.2 / DT); i++) { t += DT; weapon(s, cmd(), t, 0); }
+    const early = s.spray; for (let i = 0; i < Math.round(.15 / DT); i++) { t += DT; weapon(s, cmd(), t, 0); }
+    check("AK bursts: 0.2 s apart they climb, 0.35 s apart they start the pattern again", early > 0 && s.spray === 0, `index ${early.toFixed(2)} after 0.2 s, ${s.spray.toFixed(2)} after 0.35 s`); } }
+/* CS's walk (audit 2026-11-23): steps up to 18 units and walkable slopes at full speed, rough floors keep you on the
+   ground, a ledge drops you, a drop out of the world stops you, the bunny hop and the counter-strafe are unchanged */
+{ const box = (x, y, z, sx, sy, sz) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.translate(x, y, z); return g; }, base = () => box(0, -.5, 0, 400, 1, 400);
+  const run = (w, n, f = 1, start = [0, 0, 0]) => { const s = newPlayer(); equip(s, "ak"); s.pos.set(...start); for (let i = 0; i < 10; i++) move(w, s, cmd()); const out = { s, air: 0, minV: 1e9, top: -9 };
+    for (let i = 0; i < n; i++) { move(w, s, cmd({ f })); if (!s.onGround) out.air++; if (i > 40) out.minV = Math.min(out.minV, Math.hypot(s.vel.x, s.vel.z) / U); out.top = Math.max(out.top, s.pos.y); } return out; };
+  const step = h => run(new World([base(), box(0, h / 2, -13, 6, h, 20)]), 110);
+  const s18 = step(18 * U), s22 = step(22 * U);
+  check("an 18 unit step is walked up at full speed, 22 units is not", s18.top > 18 * U - .01 && s18.minV > 210 && s22.top < .05, `18u: top ${s18.top.toFixed(2)} m, slowest ${s18.minV.toFixed(0)} u/s; 22u: top ${s22.top.toFixed(2)} m`);
+  const ramp = deg => { const g = new THREE.BoxGeometry(6, .4, 30); g.translate(0, -.2, -15); g.rotateX(deg * DEG); g.translate(0, 0, -2); return run(new World([base(), g]), 150); };
+  const r30 = ramp(30), r50 = ramp(50);
+  check("a 30 degree ramp at full speed, a 50 degree one not walkable", r30.minV > 210 && r30.air === 0 && r50.top < 1.5, `30: slowest ${r30.minV.toFixed(0)} u/s, ${r30.air} ticks off the ground; 50: up to ${r50.top.toFixed(2)} m`);
+  const parts = [base()]; for (let z = -2; z > -40; z -= .5) parts.push(box(0, .02, z, 6, .04, .1));
+  const rough = run(new World(parts), 200);
+  check("4 cm ridges every half metre: never off the ground, full speed", rough.air === 0 && rough.minV > 210, `${rough.air} ticks in the air, slowest ${rough.minV.toFixed(0)} u/s`);
+  const ledge = run(new World([base(), box(0, .5, 10, 6, 1, 20)]), 120, 1, [0, 1, 5]);
+  check("walking off a 1 m ledge falls and lands", ledge.air > 5 && ledge.s.onGround && Math.abs(ledge.s.pos.y) < .01, `${ledge.air} ticks in the air, y ${ledge.s.pos.y.toFixed(2)}`);
+  const cliff = run(new World([box(0, -.5, 10, 6, 1, 20)]), 200, 1, [0, 0, 5]);
+  check("a drop out of the world stops you at its edge", cliff.air === 0 && cliff.s.pos.y > -.01 && cliff.s.pos.z > -.45, `z ${cliff.s.pos.z.toFixed(2)}, y ${cliff.s.pos.y.toFixed(2)}`);
+  const flat = new World([base()]);
+  { const s = newPlayer(); equip(s, "ak"); for (let i = 0; i < 10; i++) move(flat, s, cmd()); for (let i = 0; i < 128; i++) move(flat, s, cmd({ s: 1 })); let n = 0; while (Math.hypot(s.vel.x, s.vel.z) / U > 215 * .34 && n < 64) { move(flat, s, cmd({ s: -1 })); n++; }
+    check("counter-strafe to accurate in 5 ticks (78 ms), as Source", n === 5, `${n} ticks`); }
+  { const s = newPlayer(); equip(s, "ak"); for (let i = 0; i < 10; i++) move(flat, s, cmd()); const y0 = s.pos.y; let top = y0; move(flat, s, cmd({ jump: true })); for (let i = 0; i < 64 && !s.onGround; i++) { move(flat, s, cmd()); top = Math.max(top, s.pos.y); }
+    check("a jump rises 54-56 units", (top - y0) / U > 54 && (top - y0) / U < 56, `${((top - y0) / U).toFixed(1)} u`); }
+  { const ramps = new World([base(), (() => { const g = new THREE.BoxGeometry(6, .4, 30); g.translate(0, -.2, -15); g.rotateX(20 * DEG); g.translate(0, 0, -2); return g; })(), box(0, .2, -40, 6, .4, 4)]);
+    const a = newPlayer(); equip(a, "ak"); for (let i = 0; i < 10; i++) move(ramps, a, cmd()); const b = copyPlayer(newPlayer(), a); let worst = 0;
+    for (let i = 0; i < 200; i++) { const c = cmd({ f: 1, s: i % 40 < 20 ? 1 : 0, jump: i % 50 === 0, yaw: i * .004 }); move(ramps, a, c); if (i % 7 === 0) copyPlayer(b, a); else move(ramps, b, c); worst = Math.max(worst, a.pos.distanceTo(b.pos)); }
+    check("a replay from any tick lands where the original did (prediction stays exact)", worst < 1e-9, `${worst.toExponential(1)} m`); } }
 console.log(fails ? `${fails} FAILED` : "all passed"); process.exit(fails ? 1 : 0);

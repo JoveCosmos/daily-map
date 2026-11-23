@@ -1,7 +1,7 @@
 /* Competitive: the buy menu, grenade lineups, the bomb sites and the bomb (split out of game.js 2026-11-22) */
 import * as THREE from "three";
 import { WEAPONS, viewDir, clamp, OFF } from "../sim.js";
-import { TOUCH, renderer, $, scene, camera, nowS } from "./core.js";
+import { TOUCH, renderer, $, scene, camera, nowS, pointerLock } from "./core.js";
 import { dotTex } from "./fx.js";
 import { AC, dest, at } from "./audio.js";
 import { myTeam, me, GM, compLike, releaseMouse, locked, connected, setLocked, esc, ws, dispose, label } from "../game.js";
@@ -25,7 +25,7 @@ function buyMenu(on) { const was = BUY.open; BUY.open = on && GM && compLike(GM.
   if (BUY.open) { BUY.free = true; releaseMouse(); if (document.pointerLockElement) document.exitPointerLock(); }
   else if (BUY.free) { BUY.free = false; if (locked && connected && !document.pointerLockElement) relock(); } }
 /* capture the mouse again after the menu; if the browser refuses (no click or key behind it), the pause menu shows, as on Esc */
-function relock() { let p; try { p = renderer.domElement.requestPointerLock(); } catch (e) { return setLocked(false); }
+function relock() { let p; try { p = pointerLock(); } catch (e) { return setLocked(false); }
   if (p && p.catch) p.catch(() => { if (!document.pointerLockElement) setLocked(false); }); }
 function drawBuy() {
   const el = $("buy"); el.hidden = !BUY.open; if (!BUY.open) return;
@@ -84,6 +84,7 @@ const bombObj = (() => { const g = new THREE.Group(); const b = new THREE.Mesh(n
   const led = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: 0xff2a1a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); led.scale.setScalar(.35); led.position.set(-.08, .14, 0); g.add(led); g.userData.led = led;
   g.visible = false; scene.add(g); return g; })();
 function syncComp(m) {
+  if (!m.me) return;   // the in-between updates carry only the others (audit 2026-11-23)
   if (!GM || !compLike(GM.m)) { bombObj.visible = false; return; }
   const bp = GM.bp, bd = m.me && m.me.bd;
   if (bp) { bombObj.visible = true; bombObj.position.set(bp[0], bp[1], bp[2]); } else if (bd) { bombObj.visible = true; bombObj.position.set(bd[0], bd[1], bd[2]); } else bombObj.visible = false;

@@ -14,13 +14,20 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   and bot navigation live here, and the **same file runs on the server and in the browser**. Anything that decides an
   outcome (where a player is, whether a shot hits) must be computed in `sim.js` from the inputs alone, never from
   `Math.random()`, the clock or the frame rate. Spread uses a seeded generator (`mulberry32`, seed from player id and
-  command number) so client and server agree on every bullet.
+  command number) so client and server agree on every bullet. On the ground a player moves as Source's box does
+  (`groundMove`: raised a step, `STEP` = 18 units, for the move across, then stood on the highest walkable floor under
+  a disc as wide as the body, `support`); in the air, or when that fails, the capsule is pushed out of the map. Route
+  links (`buildNav`) must fit a body, not only a centre line, and the bomb-site rule is here too (`bombSites`).
 - **`server/server.js` is the authority.** It runs the simulation at 64 ticks a second, applies each player's queued
-  commands, owns health, kills, pickups, bots and rooms, and sends snapshots (32 a second). It rewinds other players to
-  what the shooter saw when it checks a hit (lag compensation, at most 0.4 s back). It also serves the static files.
+  commands, owns health, kills, pickups, bots and rooms, and sends each player the others every tick and its own state
+  every other tick (`snapshot(full)`; the pickups only when they change; compressed). It rewinds other players to what
+  the shooter saw when it checks a hit (lag compensation, at most 0.4 s back, between the two recorded ticks around the
+  shot's view time) and holds that view time to the player's usual lag, 40 ms either way (`shotTime`). Bots are a set of
+  keys and a mouse each tick (`botKeys`, `botRun`, `botTrigger`, difficulty in `BOTAIM`) run through the same `move()`
+  and `weapon()` as players. It also serves the static files.
 - **`game.js` is the client.** It predicts the local player by running `sim.js` on its own inputs, corrects itself when a
   snapshot disagrees (replaying the commands the server has not acknowledged yet), and draws everyone else
-  interpolated about 100 ms in the past. It also does rendering, the HUD, the menu, settings and touch controls.
+  interpolated two updates plus the measured jitter in the past (`interp`, 35-250 ms). It also does rendering, the HUD, the menu, settings and touch controls.
 - **`client/` holds the rest of the client, one module per part:** `core.js` (renderer, scene, camera, URL switches,
   `$`, `nowS`: no game state, safe to import anywhere), `audio.js`, `fx.js`, `talk.js`, `comp.js` (buy menu, lineups,
   sites, bomb), `radar.js`, `nades.js`, `viewmodel.js` (guns in hand, arms) and `killcam.js`. They import game state from
@@ -42,8 +49,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
   client/viewmodel.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
   menu and all CSS.
-- **The map switch is temporary.** An arrow by the menu's "Next:" moves the public room on now (`/skipmap`,
-  `MAP_SKIP` in server.js, on by default for testing, `MAP_SKIP=0` turns it off); remove it when testing is done.
+- **The map switch is for testing.** With `MAP_SKIP=1` an arrow by the menu's "Next:" moves the public room on now
+  (`/skipmap`). It is off by default: anyone could empty the public room with it every 5 seconds.
 - **One way into a game.** The menu shows a card per mode (`#mgrid`); a card opens the setup popup (`#msetup`, `msOpen`)
   with only the rows that mode lists in `MODEINFO` (side for every mode, bots, their skill, freeze time) and one Start
   (`msGo`). Joining by code or invite link opens the same popup. `#play` is only Resume / Continue during a game. A new
@@ -55,7 +62,7 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **What is kept on disk** sits next to `boards.json` (or in `$STATE_DIRECTORY`): `stats.json` (lifetime numbers per
   player name, `/stats?name=`) and `challenge.json` (the daily challenge's runs, the last 30 days, `/challenge`). Names
   are free text, there are no accounts. None of these files belong in git.
-- **Smoke lineups** are found by the server once per map (`lineups()`): it throws smokes from the attackers' route with the
+- **Smoke lineups** are found by the server once per map, at start (`lineups()`, run by a warm-up room per map): it throws smokes from the attackers' route with the
   real grenade physics (`botAim`) and keeps two per site that land on it. Clients only draw them (`setLineups`).
 - **Sound** is in client/audio.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
   Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
@@ -78,8 +85,19 @@ multiplayer correct, and the traps that already cost time once. Read it before t
    prediction and the server's state. `copyPlayer` copies arrays and objects, never shares them.
 5. **Measure netcode, do not eyeball it.** `server/nettest.mjs` connects protocol-level clients with simulated latency
    (`FAKE_LAG_MS`) and reports hit registration and prediction error. Run it after touching movement, weapons or the tick.
+6. **An update without `me` is normal.** Every other update carries only the others, the events, grenades in flight and,
+   when they changed, the pickups. Anything reading updates (the client's handlers, test clients) treats `me`, `gm`,
+   `sm`, `fi`, `sp`, `dc` and `pk` as optional: a missing list means unchanged, never empty.
 
 ## Traps already hit (do not relearn them)
+
+- **Shots land on whole ticks.** A gun's cycle (0.1 s for the AK) is not a whole number of ticks; rounding each gap up
+  fired the AK at 549 a minute, and recovery that started "after the cycle" ran on the tick of every next shot, so a
+  held spray never got past the pattern's first entries. The next shot carries the remainder, and recovery waits a tick
+  past the cycle. feeltest fires through `weapon()` tick by tick: test guns that way, not their tables.
+- **A route link must fit a body.** Links tested along a centre line alone passed under a stall's counter and between
+  posts; the old bots glided along them and never noticed, walking bots stuck there. A stuck bot still glides to its
+  next point after 1.5 s without headway; `tools/check.mjs` counts how often a map makes them.
 
 - **The menu's layout belongs to CSS.** Never set `#start`'s `display` to `flex`, `grid` or `block` from JavaScript;
   only `"none"` (hide) or `""` (show, the stylesheet decides). Setting it once centred the whole menu and broke it.
@@ -135,28 +153,37 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 ## Testing a change
 
 - `node server/feeltest.mjs`: the weapons and movement in `sim.js` against CS's numbers (damage and armour, spray and
-  recovery, tagging, falloff, wallbangs, bursts, the Zeus, landing and bunny hops) and that prediction replays exactly.
-  No server needed.
+  recovery, tagging, falloff, wallbangs, bursts, the Zeus, landing and bunny hops; a held spray and the rate of fire
+  through `weapon()` tick by tick; steps, ramps, rough floors, ledges, the counter-strafe) and that prediction replays
+  exactly. No server needed.
+- A map: `tools/check.mjs <id>` (its play tests need this `sim.js`; `SIM=<path>` checks against another build),
+  `tools/botcheck.mjs <id> [seconds] [game dir]` (a bot-only Competitive match), `tools/vischeck.mjs <id> [game dir]`
+  (how the fighters stand out; `SHOT=<prefix>` saves a few views).
 - With a test server running: `server/nadetest.mjs` (all grenades through the protocol), `server/comptest.mjs` (a
   Competitive match with bots: buying, plants, defuses, halftime), `server/nettest.mjs` (hit registration).
 
 - Run the server (`cd server && npm install && node server.js`), open `http://127.0.0.1:8945/`.
 - `?autoplay&debug` starts a game straight away and exposes debug state, for scripted tests. It never captures the
   mouse, so what shows only while playing (the radar, the phone controls) stays hidden there; test those by playing.
-- Server settings: `PORT` (default 8945), `DAILY_PERIOD` (seconds per map in the public room's rotation, default 3600).
+- Server settings: `PORT` (default 8945), `DAILY_PERIOD` (seconds per map in the public room's rotation, default 86400).
 - Competitive test settings: `FREEZE`, `ROUND_TIME`, `BOMB_TIME`, `HALF`, `TO_WIN`, `START_MONEY` (shorter matches),
   `BOMB_TO=<name>` (who carries the bomb), `TEST_PLANT=1` (a bomb already on A), `TEST_BOTS=ct,t` (bots per side),
   `DEBUG_COMP=1` (logs the carrier). In a browser, `?autoplay&debug` exposes `window.__g`; `__g.corr()` is the largest
   prediction correction seen, which should stay at 0 without other players.
 - Test-only server settings (never in production): `FAKE_LAG_MS`, `DM_TIME`, `GG_TIME` (Gun Game's clock), `DC_KILLS`
   (kills to finish the daily challenge), `ROUND_TIME`, `TO_WIN`, `SPAWN_AT=<weapon>`,
-  `DEBUG_BOTS=1` (logs what bots decide every 30 s; an empty room pauses, so keep a client connected).
+  `DEBUG_BOTS=1` (logs what bots decide every 30 s; an empty room pauses, so keep a client connected; `DEBUG_BOTS=2`
+  also logs where they glide), `GHOST=1` (humans never spawn: bot-only matches).
 - Hit registration, the measured way: `PER_TEAM=0 ROTATION=standin DUEL=1 NO_DEATH=1 FAKE_LAG_MS=150 node server.js`,
-  then `node nettest.mjs ws://127.0.0.1:<port>/ws 30`, again with `NO_REWIND=1` to compare (2026-11-16: 96% against 11%).
+  then `node nettest.mjs ws://127.0.0.1:<port>/ws 30`, again with `NO_REWIND=1` to compare (2026-11-16: 96% against 11%;
+  2026-11-23 with the page's own clock and delay: 94% at 150 and 300 ms). `BACKTRACK=1` tries a modified page reaching
+  0.3 s back on its shots alone: they miss.
   `ROTATION=standin` matters: a generated map has no clear 12-18 m lane, and `DUEL` now refuses to start without one.
   Pace any protocol client by real time, as game.js does: commands faster than 64 a second queue on the server and
   every shot arrives later than the last.
 - Check both a desktop browser and a phone (or a touch emulator in landscape).
+- A server started in the background for a test: record node's own pid (`( cd server && exec node server.js ) & pid=$!`).
+  `cd server && node server.js &` backgrounds a subshell, its pid is not the server's, and the server outlives the test.
 
 ## Sending work back
 

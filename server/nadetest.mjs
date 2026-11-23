@@ -7,7 +7,7 @@ const ws = new WebSocket(URL + "?name=Thrower"); let id = 0, seq = 0, me = null,
 const seen = { throw: 0, bounce: 0, boom: 0, flashed: 0, smoke: 0, fire: 0, fizzle: 0, hit: 0 }, live = { ng: 0, sm: 0, fi: 0 }, kinds = new Set();
 ws.on("message", raw => { const m = JSON.parse(raw);
   if (m.t === "w") id = m.id;
-  if (m.t !== "s") return; me = m.me;
+  if (m.t !== "s") return; if (m.me) me = m.me;   // your own state comes every other update
   if (me.p) yaw = Math.atan2(me.p[0], me.p[2]);   // face the middle of the map, so every throw stays inside it
   for (const e of m.ev) { if (e.k in seen) seen[e.k]++; if (e.k === "throw") kinds.add(e.n); if (e.k === "boom") kinds.add("boom" + e.n); }
   live.ng = Math.max(live.ng, (m.ng || []).length); live.sm = Math.max(live.sm, (m.sm || []).length); live.fi = Math.max(live.fi, (m.fi || []).length); });

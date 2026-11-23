@@ -72,9 +72,13 @@ Every gun goes through all of these, in this order. Tick each one per gun.
 
 - [ ] Prompt within the rules: one flat level, closed buildings, no water, stairs, balconies or trenches, many streets
 - [ ] Imported big enough (scale 50-55 for the newer, larger maps), doors and cover still to scale
-- [ ] Ground guard and pits: `tools/fillpits.mjs` leaves no holes and no pits; `tools/check.mjs` passes
+- [ ] Ground guard and pits: `tools/fillpits.mjs` leaves no holes and no pits; `tools/check.mjs` passes, its play tests
+      included: straight walks with the game's movement (nothing a step high stops them, little time off the ground),
+      routes walked as bots walk them (few glides), floor cracks, and its spawn-to-site times read (they say how much of a
+      CS round the map leaves room for)
 - [ ] No spawn pockets; both sides' spawns fair; bomb sites placed and fair (bot matches near 50/50)
-- [ ] Bots move, fight and plant on it without getting stuck
+- [ ] Bots move, fight and plant on it without getting stuck: `tools/botcheck.mjs` (add-map runs it) finishes rounds, plants,
+      glides rarely, and longer bot matches come out near 50/50
 - [ ] The look matches the collision (no invisible walls where you can see through, no walking through walls)
 - [ ] Menu preview, phone version, graphics budget
 - [ ] The operator plays it and approves; then into the rotation

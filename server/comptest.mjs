@@ -9,9 +9,9 @@ const seen = { round: 0, buy: 0, plantStart: 0, planted: 0, defuseStart: 0, defu
 let me = null, gm = null, sites = null, bought = false, seq = 0;
 ws.on("message", raw => { const m = JSON.parse(raw);
   if (m.t === "w") sites = m.sites;
-  if (m.t !== "s") return; me = m.me; gm = m.gm;
+  if (m.t !== "s") return; if (m.me) me = m.me; if (m.gm) gm = m.gm;   // your own state and the match come every other update
   for (const e of m.ev) { if (e.k in seen) seen[e.k]++; if (e.k === "roundEnd") ends.push(["Atlas", "Ember"][e.w] + ":" + e.why); if (e.k === "boom" && e.n === 2) seen.exploded = (seen.exploded || 0) + 1; }
-  if (me.mo != null) money.push(me.mo); });
+  if (m.me && me.mo != null) money.push(me.mo); });
 await new Promise(r => ws.on("open", r)); await sleep(1500);
 // round one: try the buy menu the way the page does (a pistol upgrade and armour fit $800)
 for (const it of ["vest", "deagle", "he"]) ws.send(JSON.stringify({ t: "b", i: it }));

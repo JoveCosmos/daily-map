@@ -24,7 +24,7 @@ function makeFire(x, y, z) {
 }
 const dropFx = o => { scene.remove(o.g); o.g.traverse(c => { if (c.material && !c.material.userData.shared) c.material.dispose(); if (c.isMesh && c.geometry) c.geometry.dispose(); }); };
 function syncFx(m) {
-  const sync = (map, rows, make, upd) => { const seen = new Set();
+  const sync = (map, rows, make, upd) => { if (!rows) return; const seen = new Set();   // left out of this update: unchanged
     for (const r of rows || []) { let o = map.get(r[0]); if (!o) { o = make(r); map.set(r[0], o); } upd(o, r); seen.add(r[0]); }
     for (const [id, o] of map) if (!seen.has(id)) { dropFx(o); map.delete(id); } };
   sync(FX.ng, m.ng, r => { const g = gunModel(NADES[r[1]]); g.traverse(c => { c.castShadow = false; }); g.scale.setScalar(1.3); g.position.set(r[2], r[3], r[4]); scene.add(g); return { g, to: new THREE.Vector3(r[2], r[3], r[4]) }; }, (o, r) => o.to.set(r[2], r[3], r[4]));

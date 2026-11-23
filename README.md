@@ -9,30 +9,38 @@ the menu for modes).
 
 ## What is in it
 
-- **Netcode in the Counter-Strike tradition:** an authoritative 64-tick server, client-side prediction and
-  reconciliation, interpolation of other players, and lag compensation (the server rewinds to what the shooter saw).
-  `server/nettest.mjs` measures hit registration under simulated latency.
+- **Netcode in the Counter-Strike tradition:** an authoritative 64-tick server that sends everyone else 64 times a
+  second (compressed, about 10 KB/s a player), client-side prediction and reconciliation, other players drawn two
+  updates plus the measured jitter in the past (about 40 ms on a steady line, as CS draws them), and lag compensation:
+  the server rewinds to what the shooter saw, between ticks, and holds each shot to the player's usual lag so a modified
+  page cannot reach back for a better moment. `server/nettest.mjs` measures hit registration under simulated latency.
 - **CS weapons and their feel:** 32 items with CS:GO's damage, armour penetration and range falloff: pistols (Glock-18,
   USP-S, P250, Five-SeveN, Tec-9, CZ75-Auto, Desert Eagle), SMGs (MP9, MAC-10, MP7, UMP-45, P90), shotguns (Nova,
   XM1014), rifles (Galil AR, FAMAS, AK-47, M4A4, M4A1-S, SG 553, AUG, SSG 08, AWP), the Negev, the Zeus x27, the knife.
-  A spray pattern per gun, spread that builds while spraying and recovers, tagging, wallbangs through thin walls, head,
+  A spray pattern per gun (a held spray walks all of it, at the gun's own rate of fire), spread that builds while spraying and recovers, tagging, wallbangs through thin walls, head,
   chest, stomach, arm and leg zones, CS armour and helmets, burst fire on the Glock and FAMAS.
   Each gun handles in its own way (spray recovery, how the view settles, the gun's kick, climb, twist and flash), and
   the drawn guns have their own recorded shots: a deep, barking AK, a lean, cracking M4, a suppressed USP-S.
 - **Grenades:** HE, flashbang, smoke, molotov and decoy, thrown, lobbed or bounced with real physics. Smoke blocks sight
   (for bots and for what the server sends), fire burns for 7 seconds and smoke puts it out.
-- **Modes** (only Today's match is switched on for now): Deathmatch (the public room on today's map, or your own), Competitive (CS's short match with money, a buy
+- **Modes:** Deathmatch (the public room on today's map, or your own), Competitive (CS's short match with money, a buy
   menu, two bomb sites placed on every map automatically, the C4 planted and defused, round pay, halftime, spectating
   teammates after death, and votes), Wingman (2 v 2 on one site), Retakes (the bomb already down: hold the site or retake
   it), Gun Game (every kill hands you the next gun) and a daily challenge (8 kills against bots, fastest time wins, share
   your result). Each starts from its card in the menu, set up in one popup: your side, bots, their skill, freeze time.
+  In the round modes everything is bought or taken from the dead, as in CS; the map's pickups (guns, armour, health,
+  ammunition) belong to the respawn modes.
 - **Watching it back:** a killcam through your killer's eyes, the round's best play replayed for everyone, damage numbers
   and a headshot sound, smoke lineups on every site, and lifetime stats per player name.
 - **Movement:** Source-style running, air strafing and crouching, CS's landing slowdown, bunny hops and crouch-jumps.
+  On the ground the body moves as Source's box does: it walks up anything a step high (18 units) and up slopes to 45
+  degrees at full speed, down stairs without leaving the ground, and can stand over an edge. Raw mouse input.
 - **Generated worlds:** maps made with Tencent HY-World, turned into a playable map (collision, phone version, spawns,
   bot navigation, menu preview) by one command, `tools/add-map.sh`. A public room changes to the next map of `maps/rotation.json`
-  every day at midnight UTC (the arrow beside "Next" skips ahead).
-- **Bots** at four difficulties that strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
+  every day at midnight UTC (with `MAP_SKIP=1` an arrow beside "Next" skips ahead).
+- **Bots** at four difficulties that play by the players' rules (the same movement and guns: they accelerate and stop,
+  counter-strafe, crouch into bursts, jump, spray and pull against the recoil; they hear shots, runs and landings), and
+  strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
   team chat, radio calls and pings; a damage report and assists; private rooms with a 4-letter code; a leaderboard per
   map; recorded gun sounds heard in 3D, with echo from the surroundings, bullets that crack and whiz past; real models for the AK-47, M4 and Desert Eagle held in rigged first-person arms; sparks, brass and bullet holes; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
 
@@ -50,7 +58,8 @@ Open `http://127.0.0.1:8945/` in a browser. `PORT=` changes the port. The game a
 reverse proxy (for example `/play/`); proxy WebSocket upgrades for `ws`.
 
 Useful environment settings: `PER_TEAM` (bots per side when a room fills, default 3), `DAILY_PERIOD` (seconds per map in
-the rotation, default 3600), `STATE_DIRECTORY` (where the leaderboard is kept).
+the rotation, default 86400), `STATE_DIRECTORY` (where the leaderboard is kept), `MAP_SKIP=1` (anyone may move the
+public room on to the next map from the menu: for testing only).
 
 ## Add a map
 
@@ -68,6 +77,15 @@ or fewer than 3 safe spawns a team, and reports enclosed pockets. Before the che
 holes: an invisible floor tile in every hole of the ground, a lid on every small pit, and an invisible rail along a
 large lower area (a street below a raised yard), so nobody can fall where they cannot climb back out; the check then
 refuses a map with any pit left. Nothing reaches `maps/` until every step has passed.
+
+The check also plays the map with the game's own movement: straight walks between walkable points (it refuses a map
+where too many stop at something no higher than a step), routes walked the way bots walk them (it refuses one where
+bots would keep having to glide past spots a body does not fit), floor cracks, and the time from each spawn to each
+bomb site (it warns when attackers reach a site in under 8 s or defenders arrive less than 3 s ahead: Counter-Strike
+gives the attackers well over 10 s, and a larger `--scale` gives the rounds that time). Then `tools/botcheck.mjs` plays
+a three-minute bot-only Competitive match on it (no round finished, server errors or bots stuck most of the time refuse
+the map; a lopsided side or no plants warn; `BOTCHECK=0` skips it), and `tools/vischeck.mjs` measures how the fighters
+stand out against the map from 10-25 m (a warning only; `VISCHECK=0` skips it).
 The raw upload is kept in `maps/originals/`.
 
 - `--scale` sets metres per model unit (35 suits HY-World exports; try another value if the world looks too big or
@@ -79,7 +97,7 @@ The raw upload is kept in `maps/originals/`.
   room opens on it. The room moves to the next map every `DAILY_PERIOD` seconds (default 3600; 86400 for a real day).
 
 Needs Python 3 with `trimesh` and `fast_simplification` (`pip install trimesh fast-simplification`), Node with
-`tools/package.json` installed (`cd tools && npm install`), and Google Chrome for the preview.
+`tools/package.json` installed (`cd tools && npm install`), and Google Chrome for the preview and the visibility check.
 
 ## Working on the code
 

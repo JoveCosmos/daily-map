@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { World, C, block, GAIT, DT, U, DEG, clamp, newPlayer, move, weapon, eye, inaccuracy, standinParts, gltfGeometries, WEAPONS, WIDS, wpn, NADES, NADE, viewDir } from "./sim.js";
 import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES, loadGunModels, loadArms, makeArms, loadFighters, BUST } from "./models.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { gltf, $, params, AUTO, TEAM, TEAMCOL, renderer, PHONE, scene, camera, sun, TOUCH, nowS } from "./client/core.js";
+import { gltf, $, params, AUTO, TEAM, TEAMCOL, renderer, PHONE, scene, camera, sun, TOUCH, nowS, pointerLock } from "./client/core.js";
 import { dryFire, MG, audio, AC, OUT, at, tink, dest, CLIPS, playClip, deathSound, muffle, gunSound, SUBSONIC, whiz, crack, impactSound, swish, reloadSound, pinSound, bodyHit, headDink, dmgNum, clack, probeEnv, tickDmg, ENV } from "./client/audio.js";
 import { dotTex, tracer, flashAt, puff, parts, decal, sparks, ejectShell, muzzleLight, tickParts, tickShells, flyStreaks, tracers, streaks, sparkN, shells, decals } from "./client/fx.js";
 import { buyMenu, BUY, buyKey, onTap, beep, SITES_C, bombObj, setLineups, setSites, TMO, syncComp, itemName, drawBuy, tickComp, tickLineups, LU } from "./client/comp.js";
@@ -133,6 +133,9 @@ const me = newPlayer(); me.clock = 0;
 const others = new Map(), roster = new Map();
 let srvOffset = null, ping = 0, respawnIn = 0, protect = 0, hitmark = 0, lastFire = 0;
 const smooth = new THREE.Vector3();               // the visual correction after a reconcile, decayed away
+/* a step up or down (audit 2026-11-23: the body now walks up 18 units in one tick, as in CS) moves the eye over a tenth of
+   a second, as CS smooths it; a ramp climbs less than 10 cm a tick and is followed as it is */
+let stepY = 0;
 const keys = {}; let mouseDown = false, rmb = false, locked = false, reloadQ = false, slotQ = null, DEBUG = params.has("debug");
 const releaseMouse = () => { mouseDown = rmb = false; };   // the buttons let go (chat, the buy menu)
 addEventListener("contextmenu", e => e.preventDefault());
@@ -318,12 +321,15 @@ function onSnap(m) {
   // the server's clock: follow the newest estimate smoothly; a jump of half a second or more is taken at once
   // the server clock: the least-delayed packets of the last two seconds say it best; follow them slowly, so a
   // jittery connection does not shake everyone else on screen. The interpolation delay grows with the jitter
-  const est = m.tm - nowS(); ests.push(est); if (ests.length > 64) ests.shift();
+  const est = m.tm - nowS(); ests.push(est); if (ests.length > 128) ests.shift();   // the last two seconds
   const hi = Math.max(...ests), lo = Math.min(...ests);
   if (srvOffset == null || Math.abs(hi - srvOffset) > .3) srvOffset = hi; else srvOffset += clamp(hi - srvOffset, -.002, .002);
-  interp = clamp(.075 + (hi - lo), .1, .25);
+  /* two updates' spacing plus the jitter seen (audit 2026-11-23; was at least 100 ms, three times CS's 31): the others
+     are drawn about as late as CS draws them, so someone peeking you shows up some 70 ms sooner than before */
+  interp = clamp(2 / 64 + (hi - lo) + .004, .035, .25);
   // reconcile: the server's state after the last command it ran, then the commands still in flight replayed on top
-  const before = me.pos.clone(), y = m.me;
+  // your own state comes every other update (the others every one): only then is there anything to reconcile
+  const y = m.me; if (y) { const before = me.pos.clone();
   me.pos.set(y.p[0], y.p[1], y.p[2]); me.vel.set(y.v[0], y.v[1], y.v[2]); me.duck = y.d; me.onGround = y.g; me.jumpHeld = y.j; me.hp = y.h; me.alive = y.al;
   me.mag = y.m; me.res = y.r; me.reloadAt = y.ra; me.nextShot = y.ns; me.spray = y.sp; me.lastShot = y.ls; me.punchX = y.px; me.punchY = y.py; me.acc = y.ac || 0; me.tag = y.tg || 0; me.stamina = y.st || 0; me.landed = !!y.ld; me.clock = y.ck;
   respawnIn = y.ra2 || 0; protect = y.pr || 0;
@@ -334,13 +340,13 @@ function onSnap(m) {
     me.zeus = !!y.zs; me.burstOn = !!y.bo; me.burstLeft = y.bl2 || 0; me.mo = y.mo; me.kit = !!y.kit; me.c4 = !!y.c4; me.ib = !!y.ib; me.pp = y.pp || 0; me.dp = y.dp || 0;
     if (y.te !== undefined && y.te !== myTeam) { myTeam = y.te; const cm = sleeveMaterial(myTeam); sleeve.map = cm.map; sleeve.bumpMap = cm.bumpMap; sleeve.needsUpdate = true;   // sides swapped at halftime
       $("team").textContent = TEAM[myTeam]; $("team").className = myTeam ? "t" : "ct"; for (const o of others.values()) if (o.model.tag) o.model.tag.userData.enemy = o.team !== myTeam; } }
-  if (m.pk) syncPickups(m.pk);
-  syncFx(m); SPOTTED = m.sp || []; DECOYDOTS = m.dc || []; syncComp(m); for (const e of m.pv || []) onTalk(e);
   pending = pending.filter(c => c.seq > m.a);
   const yaw = me.yaw, pitch = me.pitch;   // (a spawn turn above already set these)
   const bl = blockers(); for (const c of pending) { me.clock += DT; move(W, me, c); block(me, bl); weapon(me, c, me.clock, 0); }
   me.yaw = yaw; me.pitch = pitch;
-  const err = before.sub(me.pos); if (err.lengthSq() < 4) smooth.add(err); else smooth.set(0, 0, 0); corrMax = Math.max(corrMax, err.length());
+  const err = before.sub(me.pos); if (err.lengthSq() < 4) smooth.add(err); else smooth.set(0, 0, 0); corrMax = Math.max(corrMax, err.length()); }
+  if (m.pk) syncPickups(m.pk);   // pickups when they changed, grenades every update; the rest with your own state
+  syncFx(m); if (m.sp) SPOTTED = m.sp; if (m.dc) DECOYDOTS = m.dc; syncComp(m); for (const e of m.pv || []) onTalk(e);
   // everyone else: snapshots kept to draw between
   const seen = new Set();
   for (const [id, team, , x, yy, z, yw, pt, dk, al, vx, vz, wi, hp, vis, ga, air] of m.e) {
@@ -417,7 +423,9 @@ function tickInput() {
     slot: slotQ, zoom: rmb && (locked || AUTO), use: !!keys.KeyE };
   if (GM && GM.fz) { cmd.f = cmd.s = 0; cmd.jump = cmd.fire = false; }
   reloadQ = false; slotQ = null; me.clock += DT;
+  const fy0 = me.pos.y, g0 = me.onGround;
   move(W, me, cmd); block(me, blockers());
+  { const dy = me.pos.y - fy0; if (g0 && me.onGround && Math.abs(dy) > .1 && Math.abs(dy) < .6) stepY -= dy; }   // a step: the eye follows over a moment (render)
   const s = weapon(me, cmd, me.clock, (myId * 100003 + cmd.seq) >>> 0);
   if (s && s.nade) { swish(.8); swing = 1; lastFire = performance.now(); }
   else if (s && s.melee) { swish(1); swing = 1; lastFire = performance.now(); }
@@ -507,7 +515,7 @@ function drawOthers() {
     const gd = s1.ga != null && s0.ga != null ? Math.atan2(Math.sin(s1.ga - s0.ga), Math.cos(s1.ga - s0.ga)) : 0, gph = s1.ga != null ? (s0.ga ?? s1.ga) + gd * k : o.model.phase;
     // in the air from the server's own flag, as the leg hit boxes are; a landing gives at the knees for a quarter second
     const air = s1.alive ? s0.air + (s1.air - s0.air) * k : 0;
-    if (o.model.air > .5 && air <= .5) { o.model.landT = nowS(); ACTN.land = (ACTN.land || 0) + 1; }
+    if (o.model.air > .5 && air <= .5) { o.model.landT = nowS(); ACTN.land = (ACTN.land || 0) + 1; if (s1.alive) at(o.model.g.position, () => step(Math.min(1, stepVol(o.model.g.position) * 1.4), true)); }   // their landing is heard, as in CS (audit 2026-11-23; it was silent)
     o.model.air = air; const land = o.model.landT ? Math.max(0, 1 - (nowS() - o.model.landT) / .25) : 0;
     o.model.sd.pose(s1.alive ? speed : 0, gph, duck, s1.alive ? pitch : 0, { move: mvA, dead: dd, air, land: Math.sin(land * Math.PI), act: actNow(o, s1, speed) });
     if (!s1.alive) { g.rotation.x = -Math.PI / 2 * .94 * tip; g.rotation.z = ((o.id * 37) % 7 - 3) * .06 * tip; g.position.y = y + .12 * tip; o.model.tag.visible = false; } else { g.rotation.x = 0; g.rotation.z = 0; o.model.tag.visible = !o.model.tag.userData.enemy || o === aimedAt; }
@@ -524,13 +532,13 @@ const dmLike = m => m === "dm" || m === "gg", compLike = m => m === "comp" || m 
 let LADDER = null; const myLevel = () => ((roster.get(myId) || {}).gl) || 0;
 const SPEC = { id: 0 };
 function render(dt) {
-  smooth.multiplyScalar(Math.exp(-dt * 12));
+  smooth.multiplyScalar(Math.exp(-dt * 12)); stepY *= Math.exp(-dt * 14); if (!me.alive) stepY = 0;
   if (wasAlive && !me.alive) { onDeath(); kcBegin(); } else if (!wasAlive && me.alive) { onRespawn(); SPEC.id = 0; } wasAlive = me.alive;
   const kc = kcActive(); if (!kc && KC.on) kcEnd(); KC.on = kc; let kcT = null;
   const spec = spectating() ? (others.get(SPEC.id) && others.get(SPEC.id).alive && others.get(SPEC.id).team === myTeam ? others.get(SPEC.id) : (specNext(), others.get(SPEC.id))) : null;
   if (!spec) SPEC.id = 0;
   const dk = me.alive ? 0 : clamp((nowS() - diedAt) / .6, 0, 1), de = 1 - Math.pow(1 - dk, 3);   // the fall, eased
-  camera.position.set(me.pos.x + smooth.x, me.pos.y + smooth.y + (me.alive ? eye(me) : deathEye + (.32 - deathEye) * de), me.pos.z + smooth.z);
+  camera.position.set(me.pos.x + smooth.x, me.pos.y + smooth.y + stepY + (me.alive ? eye(me) : deathEye + (.32 - deathEye) * de), me.pos.z + smooth.z);
   camera.rotation.order = "YXZ"; camera.rotation.z = me.alive ? 0 : deathRoll * de * (nowS() - diedAt > 1.1 ? .55 : 1);
   if (!me.alive && nowS() - diedAt < 1.1) { camera.rotation.y = me.yaw; camera.rotation.x = me.pitch + (-.25 - me.pitch) * de; }
   else if (!me.alive && others.get(killerId)) { const d = others.get(killerId).model.g.position.clone().sub(camera.position); d.y += 1.2; camera.rotation.y = lerpAng(camera.rotation.y, Math.atan2(-d.x, -d.z), Math.min(1, dt * 4)); camera.rotation.x += (Math.atan2(d.y, Math.hypot(d.x, d.z)) - camera.rotation.x) * Math.min(1, dt * 4); }
@@ -733,7 +741,7 @@ function tickNext() { if (!nextAt) return; const t = Math.max(0, Math.round((nex
 setInterval(tickNext, 1000);
 loadToday(); setInterval(() => { if (!connected) loadToday(); }, 15000);
 /* pointer lock needs a click; a refusal (no click yet) is not an error */
-function lockMouse() { if (TOUCH) return touchPlay(true); try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+function lockMouse() { if (TOUCH) return touchPlay(true); try { const p = pointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
 function start(q) {
   const n = $("name").value.trim().slice(0, 16) || "player" + (Math.random() * 900 + 100 | 0); if ($("name").value.trim()) try { localStorage.setItem("fps-name", n); } catch (e) {}
   if (ws && ws.readyState > 1) ws = null;   // a dead socket never blocks Play

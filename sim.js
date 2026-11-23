@@ -47,12 +47,14 @@ const P_NEGEV = [[0,0],[0,.9],[.3,1.9],[-.2,2.9],[.5,3.8],[-.4,4.4],[.3,4.7],[-.
    pellets/pcone = a shotgun's pellets and their cone; shell = a shotgun reloads one shell at a time. Slots: p primary,
    s secondary (pistol), k knife, g grenade */
 export const HG = { head: 4, body: 1, stomach: 1.25, arm: 1, leg: .75 };
+/* reloads are CS's own times again (audit 2026-11-23; shortened to AK 2.0, M4 2.2, AWP 2.6 on 2026-10-28): the reload is the
+   window a duel is won in. Hands and sounds follow the time, they are keyed as shares of it */
 export const WEAPONS = {
   knife:  { name: "Knife", slot: "k", melee: true, range: 1.7, rate: .4, speed: 250, deploy: .4, ap: 1.7, tag: .3, dmg: { head: 55, body: 40, stomach: 40, leg: 30 } },
   glock:  { name: "Glock-18", slot: "s", auto: false, burst: true, burstDelay: .5, rate: .15, mag: 20, res: 120, speed: 240, deploy: .55, reload: 2.27, spray: P_GLOCK, base: [.42, .3], move: 2, air: 4, fire: .9, tau: .2, accMax: 3, dmg: 30, ap: .94, range: .85, pen: .15, tag: .4 },
   usp:    { name: "USP-S", slot: "s", auto: false, quiet: true, rate: .17, mag: 12, res: 24, speed: 240, deploy: .55, reload: 2.17, spray: P_USP, base: [.3, .2], move: 2.2, air: 4, fire: 1.0, tau: .22, accMax: 3, dmg: 35, ap: 1.01, range: .91, pen: .18, tag: .4 },
   deagle: { name: "Desert Eagle", slot: "s", auto: false, rate: .225, mag: 7, res: 35, speed: 230, deploy: .7, reload: 2.2, spray: P_DEAGLE, base: [.5, .35], move: 5, air: 7, fire: 2.4, tau: .4, accMax: 5, dmg: 63, ap: 1.864, range: .81, pen: .25, tag: .6 },
-  mp9:    { name: "MP9", slot: "p", rate: .07, mag: 30, res: 120, speed: 240, deploy: .8, reload: 2.1, spray: P_MP9, base: [.55, .4], move: 1.6, air: 6, fire: .5, tau: .1, accMax: 2.2, dmg: 26, ap: 1.2, range: .87, pen: .12, tag: .4 },
+  mp9:    { name: "MP9", slot: "p", rate: .07, mag: 30, res: 120, speed: 240, deploy: .8, reload: 2.13, spray: P_MP9, base: [.55, .4], move: 1.6, air: 6, fire: .5, tau: .1, accMax: 2.2, dmg: 26, ap: 1.2, range: .87, pen: .12, tag: .4 },
   mac10:  { name: "MAC-10", slot: "p", rate: .075, mag: 30, res: 100, speed: 240, deploy: .8, reload: 2.6, spray: P_MAC10, base: [.65, .45], move: 1.8, air: 6, fire: .55, tau: .1, accMax: 2.4, dmg: 29, ap: 1.15, range: .8, pen: .12, tag: .4 },
   nova:   { name: "Nova", slot: "p", rate: .88, mag: 8, res: 32, speed: 220, deploy: .9, reload: .5, shell: .5, kick: 3, base: [.8, .6], move: 2, air: 6, pellets: 9, pcone: 3.6, dmg: 26, ap: 1.0, range: .7, pen: .1, tag: .5 },
   p250:   { name: "P250", slot: "s", auto: false, rate: .15, mag: 13, res: 26, speed: 240, deploy: .55, reload: 2.2, spray: P_P250, base: [.45, .32], move: 2.2, air: 4, fire: 1.1, tau: .22, accMax: 3.4, dmg: 38, ap: 1.28, range: .9, pen: .18, tag: .45 },
@@ -70,10 +72,10 @@ export const WEAPONS = {
   xm1014: { name: "XM1014", slot: "p", rate: .35, mag: 7, res: 32, speed: 215, deploy: .9, reload: .35, shell: .35, kick: 2.4, base: [.8, .6], move: 2, air: 6, pellets: 6, pcone: 4.2, dmg: 20, ap: 1.6, range: .7, pen: .1, tag: .5 },
   negev:  { name: "Negev", slot: "p", rate: .075, mag: 150, res: 300, speed: 150, deploy: 1.1, reload: 5.7, spray: P_NEGEV, base: [.9, .6], move: 4, air: 9, fire: .7, tau: .2, accMax: 4, dmg: 35, ap: 1.42, range: .97, pen: .28, tag: .55 },
   zeus:   { name: "Zeus x27", slot: "k", auto: false, rate: .5, mag: 1, res: 0, speed: 245, deploy: .9, reload: 99, base: [.2, .2], move: 1, air: 2, reach: 4.65, dmg: 500, ap: 2, pen: 0, tag: .6 },
-  ak:     { name: "AK-47", slot: "p", rate: .1, mag: 30, res: 90, speed: 215, deploy: .9, reload: 2.0, spray: SPRAY, base: [.38, .22], move: 5.5, air: 9, fire: 1.2, tau: .15, accMax: 3, dmg: 36, ap: 1.55, range: .98, pen: .3, tag: .55 },
-  m4:     { name: "M4A4", slot: "p", rate: .09, mag: 30, res: 90, speed: 225, deploy: .9, reload: 2.2, spray: SPRAY_M4, base: [.32, .2], move: 5, air: 9, fire: .95, tau: .13, accMax: 2.4, dmg: 33, ap: 1.4, range: .97, pen: .25, tag: .5 },
+  ak:     { name: "AK-47", slot: "p", rate: .1, mag: 30, res: 90, speed: 215, deploy: .9, reload: 2.43, spray: SPRAY, base: [.38, .22], move: 5.5, air: 9, fire: 1.2, tau: .15, accMax: 3, dmg: 36, ap: 1.55, range: .98, pen: .3, tag: .55 },
+  m4:     { name: "M4A4", slot: "p", rate: .09, mag: 30, res: 90, speed: 225, deploy: .9, reload: 3.07, spray: SPRAY_M4, base: [.32, .2], move: 5, air: 9, fire: .95, tau: .13, accMax: 2.4, dmg: 33, ap: 1.4, range: .97, pen: .25, tag: .5 },
   aug:    { name: "AUG", slot: "p", rate: .09, mag: 30, res: 90, speed: 220, deploy: .9, reload: 2.4, spray: SPRAY_AUG, base: [.4, .25], scoped: .12, zoom: [1, .5], zoomSpeed: 150, move: 5, air: 9, fire: .9, tau: .14, accMax: 2.4, dmg: 28, ap: 1.8, range: .98, pen: .28, tag: .5 },
-  awp:    { name: "AWP", slot: "p", rate: 1.46, mag: 10, res: 30, speed: 200, deploy: 1.15, reload: 2.6, base: [8, 8], scoped: .05, zoom: [1, .27, .11], zoomSpeed: 100, move: 12, air: 18, unzoom: true, kick: 2.2, dmg: 115, ap: 1.95, range: .99, pen: .6, tag: .6 },
+  awp:    { name: "AWP", slot: "p", rate: 1.46, mag: 10, res: 30, speed: 200, deploy: 1.15, reload: 3.67, base: [8, 8], scoped: .05, zoom: [1, .27, .11], zoomSpeed: 100, move: 12, air: 18, unzoom: true, kick: 2.2, dmg: 115, ap: 1.95, range: .99, pen: .6, tag: .6 },
   he:      { name: "HE grenade", slot: "g", nade: true, speed: 245, deploy: .5, dmg: 98, ap: 1.15, radius: 8.9 },
   flash:   { name: "Flashbang", slot: "g", nade: true, speed: 245, deploy: .5 },
   smoke:   { name: "Smoke", slot: "g", nade: true, speed: 245, deploy: .5 },
@@ -224,6 +226,13 @@ export class World {
       if (!dx && !dz) continue; const list = cell.get((n.ix + dx) + "," + (n.iz + dz)); if (!list) continue;
       for (const m of list) { if (m.i < n.i || Math.abs(m.p.y - n.p.y) > .55) continue;
         a.copy(n.p); a.y += .45; c.copy(m.p); c.y += .45; if (!this.clear(a, c)) continue; a.y += .8; c.y += .8; if (!this.clear(a, c)) continue;
+        /* a link must fit a body (audit 2026-11-23): clear at both shoulders and over the head too, not along the centre
+           line alone. The old bots glided along links and never noticed; walking them, they stuck on stall counters and
+           corners. A gap a body cannot pass was never passable by a player either */
+        { const dx = m.p.x - n.p.x, dz = m.p.z - n.p.z, L = Math.hypot(dx, dz) || 1, sx = -dz / L * C.radius * .8, sz = dx / L * C.radius * .8; let fits = true;
+          for (const k of [1, -1]) { a.set(n.p.x + sx * k, n.p.y + .9, n.p.z + sz * k); c.set(m.p.x + sx * k, m.p.y + .9, m.p.z + sz * k); if (!this.clear(a, c)) { fits = false; break; } }
+          if (fits) { a.set(n.p.x, n.p.y + 1.7, n.p.z); c.set(m.p.x, m.p.y + 1.7, m.p.z); fits = this.clear(a, c); }
+          if (!fits) { this.narrow = (this.narrow || 0) + 1; continue; } }
         const w = n.p.distanceTo(m.p); n.nb.push([m.i, w]); m.nb.push([n.i, w]); }
     }
     const comp = new Int32Array(nodes.length).fill(-1); let best = -1, bestN = 0;
@@ -258,6 +267,23 @@ export class World {
 const _seg = new THREE.Line3(), _box = new THREE.Box3(), _tp = new THREE.Vector3(), _cp = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0);
 
+/* the two bomb sites (2026-11-14, moved here from server.js 2026-11-23 so tools/check.mjs times the same sites): on the
+   defenders' half, as far apart as the half allows, each with open ground around it */
+export function bombSites(W) {
+  const n = W.nodes; if (!n.length) return [];
+  const dC = W.dijkstra(W.spawn[0][0] ?? 0), dT = W.dijkstra(W.spawn[1][0] ?? 0), span = W.span || 1;
+  const open = x => n.filter(y => y.p.distanceTo(x.p) < 3).length >= 12;
+  /* 2026-11-22 balance: bot matches showed the side follows how far the sites sit from the CT spawn (Ember won 59-64%
+     where they were 18-26 m out, Atlas 60-65% where one was right at its spawn), so both now sit 25-45% of the map's
+     walk from the CT spawn, and clearly nearer the CTs than the Ts */
+  let cand = n.filter(x => isFinite(dC[x.i]) && isFinite(dT[x.i]) && dC[x.i] > span * .25 && dC[x.i] < span * .45 && dC[x.i] < dT[x.i] * .8 && open(x));
+  if (cand.length < 2) cand = n.filter(x => isFinite(dC[x.i]) && isFinite(dT[x.i]) && dC[x.i] > span * .12 && dC[x.i] < dT[x.i] * .85 && open(x));
+  if (cand.length < 2) cand = n.filter(x => isFinite(dC[x.i]) && dC[x.i] < dT[x.i]);
+  if (cand.length < 2) cand = n;
+  let a = cand[0], b = cand[0];
+  for (let k = 0; k < 2; k++) { b = cand.reduce((m, x) => x.p.distanceTo(a.p) > m.p.distanceTo(a.p) ? x : m, cand[0]); a = cand.reduce((m, x) => x.p.distanceTo(b.p) > m.p.distanceTo(b.p) ? x : m, cand[0]); }
+  return [{ name: "A", p: a.p.clone(), r: 3.5 }, { name: "B", p: b.p.clone(), r: 3.5 }];
+}
 /* ── a player: state, one command of movement, the weapon ─────────────────────────────────────────────────────── */
 export function newPlayer() {
   return { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, duck: 0, onGround: false, jumpHeld: false,
@@ -329,6 +355,7 @@ export function move(w, s, cmd, dt = DT) {
   if (!s.onGround) { const cur = s.vel.x * wd.x + s.vel.z * wd.z, add = Math.min(ws, C.aircap) - cur; if (add > 0) { const acc = Math.min(C.airaccel * ws * dt, add); s.vel.x += acc * wd.x; s.vel.z += acc * wd.z; } }
   s.vel.y -= C.gravity * dt;
   const was = s.onGround, prev = s.pos.clone(), vy0 = s.vel.y;
+  if (was && groundMove(w, s, dt)) { if (s.stamina > 0) s.stamina = Math.max(0, s.stamina - STAMINA.rec * dt); return; }
   s.pos.addScaledVector(s.vel, dt);
   { const o = s.pos.clone(); o.y += .5; if (!w.first(o, DOWN, 6.5)) { s.pos.x = prev.x; s.pos.z = prev.z; s.vel.x = s.vel.z = 0; } }
   const delta = w.collide(s.pos, C.radius, height(s));
@@ -341,6 +368,46 @@ export function move(w, s, cmd, dt = DT) {
   if (s.onGround && !was) { s.stamina = Math.min(STAMINA.max, (s.stamina || 0) + STAMINA.land * Math.max(0, -vy0) / U); s.landed = true; }   // paid on the first ground step (a jump on that very tick skips it, as in CS)
   else if (s.onGround && s.stamina > 0) s.stamina = Math.max(0, s.stamina - STAMINA.rec * dt);
   if (was && !s.onGround && s.vel.y <= 0) { const o = s.pos.clone(); o.y += .3; const g = w.first(o, DOWN, .62); if (g && Math.abs(g.face.normal.y) > .7) { s.pos.y = g.point.y; s.vel.y = 0; s.onGround = true; } }
+}
+/* CS's walk on the ground (audit 2026-11-23). The capsule alone climbed nothing over ~25 cm, lost half its speed on a
+   30 degree ramp and was in the air for a tick on every bump of a generated floor (and so shot with the jump's spread).
+   Source moves a flat-bottomed box: up a step's height (18 units), across, then down onto the highest walkable floor
+   under it. Here the same: the capsule is raised by STEP (less under a low roof) for the move across, so walls stop it
+   and anything lower passes beneath; then it stands on the highest floor no steeper than 45 degrees found under a disc
+   as wide as itself, at most a step below where it started. So steps up to 18 units and slopes cost no speed, it walks
+   down stairs without leaving the ground, and it can stand over an edge as a CS player does. Off an edge deeper than a
+   step, squeezed by a roof or a steep face, it is left to the plain move above (which falls, slides or stops) */
+export const STEP = 18 * U;
+const SUP = [[0, 0], ...[...Array(8)].map((_, k) => [Math.cos(k * Math.PI / 4) * C.radius * .95, Math.sin(k * Math.PI / 4) * C.radius * .95])];
+const _gq = new THREE.Vector3(), _go = new THREE.Vector3();
+/* the highest walkable floor under a disc at q, from just above q down `down`; null if none */
+export function support(w, q, down) {
+  let best = null;
+  for (const [dx, dz] of SUP) { _go.set(q.x + dx, q.y + .03, q.z + dz); const g = w.first(_go, DOWN, down + .03);
+    if (g && Math.abs(g.face.normal.y) > .7 && (best === null || g.point.y > best)) best = g.point.y; }
+  return best;
+}
+function groundMove(w, s, dt) {
+  const h = height(s), p = s.pos;
+  _go.set(p.x, p.y + h, p.z); const roof = w.first(_go, UP, STEP + .05), lift = Math.min(STEP, roof ? roof.distance - .03 : STEP);
+  if (lift < .05) return false;
+  const q = _gq.set(p.x + s.vel.x * dt, p.y + lift, p.z + s.vel.z * dt);
+  const d1 = w.collide(q, C.radius, h); if (Math.abs(d1.y) > .02) return false;          // a roof or a steep face up there
+  q.x += d1.x; q.z += d1.z;
+  /* the edge guard: no floor within 6.5 m under the new centre, nor half and a whole radius further on, is a drop out of
+     the world, which nobody walks into; they stay where they stand, as at a wall. A crack under the centre alone (a
+     generated mesh has them) no longer stops anyone */
+  { const vx = q.x - p.x, vz = q.z - p.z, L = Math.hypot(vx, vz) || 1; let deep = true;
+    for (const k of [0, .5, 1]) { _go.set(q.x + vx / L * C.radius * k, p.y + .5, q.z + vz / L * C.radius * k); if (w.first(_go, DOWN, 7)) { deep = false; break; } }
+    if (deep) { s.vel.x = s.vel.z = 0; s.vel.y = 0; s.onGround = true; return true; } }
+  const f = support(w, q, lift + STEP); if (f === null) return false;                    // more than a step down: it falls
+  q.y = f;
+  // out of what it still touches there: a wall a little, or up onto an edge the disc's points missed (a ridge between them)
+  const d2 = w.collide(q, C.radius, h); if (d2.y < -.02 || d2.y > .12 || Math.hypot(d2.x, d2.z) > .05) return false;
+  q.add(d2);
+  // a wall takes its share of the speed; a push from below (an edge stepped onto, steeper than 45 degrees from the side) none
+  for (const d of [d1, d2]) { const L = Math.hypot(d.x, d.z); if (L > 1e-5 && Math.abs(d.y) < L) { const nx = d.x / L, nz = d.z / L, vn = s.vel.x * nx + s.vel.z * nz; if (vn < 0) { s.vel.x -= vn * nx; s.vel.z -= vn * nz; } } }
+  p.copy(q); s.vel.y = 0; s.onGround = true; return true;
 }
 /* players block each other (2026-11-22), as in CS: after its move, a player standing in another's capsule is pushed out
    sideways and loses the speed it had into them. The server runs it for everyone after each move, the client for itself
@@ -379,7 +446,11 @@ export function weapon(s, cmd, t, seed) {
     if (W0.shell) { if (s.res > 0 && s.mag < W0.mag) { s.mag++; s.res--; } s.reloadAt = s.mag < W0.mag && s.res > 0 ? t + W0.shell : 0; }
     else { const n = Math.min(W0.mag - s.mag, s.res); s.mag += n; s.res -= n; s.reloadAt = 0; }
   }
-  if (t - s.lastShot > (W0.rate || .1)) { s.spray *= Math.exp(-DT * 4.06 / (W0.rec || .42)); if (s.spray < .5) s.spray = 0;   /* curve, not a line (2026-11-23): a full spray still resets in rec, but a 3-shot burst needs ~.45 rec (AK ~.2 s), so fast taps climb */ const k = Math.exp(-DT * (W0.pr || 9)); s.punchX *= k; s.punchY *= k; }
+  /* recovery starts one tick after the gun could have fired again (audit 2026-11-23): shots land on whole ticks, so an
+     AK's 0.1 s comes round on the 7th tick (0.109 s), and "longer than the cycle" was true on the very tick of every
+     next shot. A held spray lost its climb before each bullet: it never left the pattern's first entry until today, and
+     after the curve below it stalled at the 7th */
+  if (t - s.lastShot > (W0.rate || .1) + DT + 1e-6) { s.spray *= Math.exp(-DT * 4.06 / (W0.rec || .42)); if (s.spray < .5) s.spray = 0;   /* curve, not a line (2026-11-23): a full spray still resets in rec, but a 3-shot burst needs ~.45 rec (AK ~.2 s), so fast taps climb */ const k = Math.exp(-DT * (W0.pr || 9)); s.punchX *= k; s.punchY *= k; }
   if (!s.alive) return null;
   if (W0.c4) { s.zoomHeld = !!cmd.zoom; return null; }   // the bomb: holding fire on a site plants it, which the server decides
   // a grenade: left click cocks a full throw, right click a lob, both together a medium one; it flies on release
@@ -409,7 +480,9 @@ export function weapon(s, cmd, t, seed) {
   if (W0.burst && s.burstOn) { if (pull && !s.burstLeft && t >= s.nextShot - 1e-6 && t >= s.deployUntil) s.burstLeft = Math.min(3, s.mag); trigger = s.burstLeft > 0; }
   if (!trigger || s.reloadAt || t < s.nextShot - 1e-6 || t < s.deployUntil) return null;
   if (s.mag <= 0) { s.burstLeft = 0; if (s.res > 0) { s.reloadAt = t + (W0.shell || W0.reload); s.zoom = 0; } return null; }
-  s.mag--; s.nextShot = t + W0.rate; s.lastShot = t;
+  /* the next shot is due a cycle after this one was due, not after the tick it landed on (audit 2026-11-23), as CS
+     carries the remainder: rounding every gap up to a whole tick fired the AK at 549 a minute instead of 600 */
+  s.mag--; s.nextShot = (t - s.nextShot < DT - 1e-6 ? s.nextShot : t) + W0.rate; s.lastShot = t;
   if (s.burstLeft > 0) { s.burstLeft--; s.nextShot = t + (s.burstLeft > 0 ? .055 : W0.burstDelay || .4); }
   const cone = inaccuracy(s) * (W0.burst && s.burstOn ? 1.6 : 1);
   if (W0.fire) s.acc = Math.min(W0.accMax || 3, (s.acc || 0) + W0.fire);
