@@ -170,6 +170,7 @@ body.rt #money{display:none}   /* Retakes: nothing is bought */
 .msact{display:grid;grid-template-columns:auto 1fr;gap:10px;margin-top:4px}.msact .play{height:52px;font-size:16px}
 .msbox{overflow-x:hidden}.msrow>*,.seg3>*{min-width:0}.seg3 button{min-width:0;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:480px){.msrow{grid-template-columns:1fr;gap:5px}.seg3 button{font-size:12px}.msbox{padding:16px 14px}}   /* narrow phones: each label above its control */
+@media (max-width:430px){.brand .wm{display:none}}   /* phones: the name row (mark, name, players, settings) ran past the screen and the menu scrolled sideways; the NG mark stays */
 .msback{height:52px;padding:0 18px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#dfe7e2;font:700 14px ui-sans-serif,system-ui;cursor:pointer}
 
 /* the board's tabs (2026-11-17): today's best, lifetime stats for the name in the box */
@@ -462,14 +463,14 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
     <section class="modes" id="priv">
       <div class="mgrid" id="mgrid">
         <button type="button" class="mcard hot" data-m="public"><b>Today's match</b><small>Deathmatch on today's map with everyone online</small></button>
-        <button type="button" class="mcard" data-m="comp" hidden><b>Competitive</b><small>5 v 5, the bomb, money, first to 9</small></button>
-        <button type="button" class="mcard" data-m="wing" hidden><b>Wingman</b><small>2 v 2 on one bomb site</small></button>
-        <button type="button" class="mcard" data-m="gg" hidden><b>Gun Game</b><small>Every kill hands you the next gun</small></button>
-        <button type="button" class="mcard" data-m="dm" hidden><b>Deathmatch</b><small>Your own room, invite friends</small></button>
-        <button type="button" class="mcard" data-m="dc" hidden><b>Challenge</b><small>8 kills against bots, fastest wins</small></button>
-        <button type="button" class="mcard" data-m="rt" hidden><b>Retakes</b><small>The bomb is down: hold the site or retake it</small></button>
+        <button type="button" class="mcard" data-m="comp"><b>Competitive</b><small>5 v 5, the bomb, money, first to 9</small></button>
+        <button type="button" class="mcard" data-m="wing"><b>Wingman</b><small>2 v 2 on one bomb site</small></button>
+        <button type="button" class="mcard" data-m="gg"><b>Gun Game</b><small>Every kill hands you the next gun</small></button>
+        <button type="button" class="mcard" data-m="dm"><b>Your own room</b><small>Deathmatch with your bots and settings, invite friends with a code</small></button>
+        <button type="button" class="mcard" data-m="dc"><b>Challenge</b><small>8 kills against bots, fastest wins</small></button>
+        <button type="button" class="mcard" data-m="rt"><b>Retakes</b><small>The bomb is down: hold the site or retake it</small></button>
       </div>
-      <div class="joinrow" hidden><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join a room</button></div>
+      <div class="joinrow"><input id="code" maxlength="4" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room code"><button type="button" class="go2" id="joincode">Join a room</button></div>
     </section>
   </main>
   <div class="msetup" id="msetup" hidden role="dialog" aria-modal="true" aria-labelledby="msTitle">
@@ -486,7 +487,7 @@ body.touch #vote{top:56px;right:auto;left:50%;transform:translateX(-50%);width:m
     </div>
   </div>
   <aside class="lb" id="lb">
-    <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false" hidden>Challenge</button></div>
+    <div class="lbtabs" id="lbtabs" role="tablist"><button type="button" class="on" data-p="lbToday" role="tab" aria-selected="true">Today</button><button type="button" data-p="lbStats" role="tab" aria-selected="false">Stats</button><button type="button" data-p="lbDc" role="tab" aria-selected="false">Challenge</button></div>
     <div class="lbp" id="lbToday">
       <span class="eyebrow">Today's best</span>
       <ol id="lbtop"></ol>

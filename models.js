@@ -122,7 +122,7 @@ function variant(w, g) {
    the file's forward into ours (-Z); mats names each material slot of the file */
 const IMPORTED = {
   ak: { file: "hy-ak.glb", rot: Math.PI / 2, own: true },     // Hunyuan 3D (2026-11-22), own textures kept
-  m4: { file: "hy-m4.glb", rot: Math.PI / 2, own: true },
+  m4: { file: "hy-m4.glb", rot: Math.PI, own: true, dark: .22 },   // the re-rendered Maverick (2026-11-23) came out silver-white: darkened to the black finish asked for
   mp9: { file: "hy-mp9.glb", rot: Math.PI / 2, own: true },
   deagle: { file: "hy-deagle.glb", rot: -Math.PI / 2, own: true },
   awp: { file: "hy-awp.glb", rot: -Math.PI / 2, own: true },
@@ -148,7 +148,7 @@ function fitImported(w, d, scene) {
   const code = codeGun(d.like || w), cb = new THREE.Box3().setFromObject(code); disposeTree(code);
   bakeSkins(scene); const root = new THREE.Group(); scene.rotation.y += d.rot; root.add(scene);
   if (!d.noLevel) levelRoll(root, scene);
-  scene.traverse(o => { if (o.isMesh) { if (!d.own) o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; else o.material.userData.shared = true; o.castShadow = true; o.geometry.userData.shared = true; } });
+  scene.traverse(o => { if (o.isMesh) { if (!d.own) o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; else { o.material.userData.shared = true; if (d.dark) o.material.color.multiplyScalar(d.dark); } o.castShadow = true; o.geometry.userData.shared = true; } });
   let b = new THREE.Box3().setFromObject(root); root.scale.setScalar((cb.max.z - cb.min.z) / (b.max.z - b.min.z)); root.updateMatrixWorld(true);
   b = new THREE.Box3().setFromObject(root);
   root.position.set((cb.min.x + cb.max.x) / 2 - (b.min.x + b.max.x) / 2, cb.max.y - b.max.y, cb.min.z - b.min.z);
@@ -339,7 +339,12 @@ export function makeArms(sleeve, team = 0) {
     if (extra.length && g.index) { const p = g.attributes.position, past = new Uint8Array(n), v = new THREE.Vector3();
       const at = nm => { const i = bones.findIndex(b => b.name === nm); return i < 0 ? null : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert()); };
       for (const k of ["R", "L"]) { const a = at("forearm" + k), e = at("forearm" + k + "_end"); if (!a || !e) continue; const ax = e.sub(a), L2 = ax.lengthSq();
-        for (let i = 0; i < n; i++) { v.fromBufferAttribute(p, i).applyMatrix4(mesh.bindMatrix).sub(a); const t = v.dot(ax) / L2; if (t > 1.02 && v.addScaledVector(ax, -t).length() < .2) past[i] = 1; } }
+        for (let i = 0; i < n; i++) { v.fromBufferAttribute(p, i).applyMatrix4(mesh.bindMatrix).sub(a); const t = v.dot(ax) / L2; if (t > .8 && v.addScaledVector(ax, -t).length() < .2) past[i] = 1; } }
+      /* the cuff (2026-11-23): sleeve vertices still partly on the hand bones were pulled into flaps whenever the hand
+         turned (knife, nade, bomb); the sleeve's end rides the forearm, the glove covers the wrist */
+      const fore = { R: bones.findIndex(b => b.name === "forearmR"), L: bones.findIndex(b => b.name === "forearmL") };
+      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) { const nm = bones[si.getComponent(i, k)].name; if (HANDISH.test(nm)) { const f = fore[/L$/.test(nm) ? "L" : "R"]; if (f >= 0) si.setComponent(i, k, f); } }
+      si.needsUpdate = true;
       const ix = g.index.array, keep = []; for (let t = 0; t < ix.length; t += 3) if (!past[ix[t]] && !past[ix[t + 1]] && !past[ix[t + 2]]) keep.push(ix[t], ix[t + 1], ix[t + 2]);
       g.setIndex(keep); } }
   else for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
@@ -357,6 +362,8 @@ export function makeArms(sleeve, team = 0) {
     const inv = S.hand.matrixWorld.clone().invert(), at = n => B(n).getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
     const F = at("f_middle.01." + k).normalize(), across = at("palm_index." + k).sub(at("palm_pinky." + k)).normalize();
     S.F = F; S.N = new THREE.Vector3().crossVectors(F, across).normalize(); if (k === "L") S.N.negate();
+    // the palm's facing as the forearm sees it at rest, so the forearm can roll with the hand (wrist twist, below)
+    S.refN = S.N.clone().transformDirection(S.hand.matrixWorld).applyQuaternion(S.fore.getWorldQuaternion(new THREE.Quaternion()).invert());
   }
   const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), pole = new THREE.Vector3();
   const setWorldQuat = (b, wq) => { b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(wq)); b.updateMatrixWorld(true); };
@@ -370,6 +377,14 @@ export function makeArms(sleeve, team = 0) {
     for (const f of S.fingers) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), curl));
     for (const f of S.thumb) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), thumbCurl));
     // the arm: shoulder fixed, elbow from the two lengths, bent toward the pole
+    /* the sleeve ends ~.8 of the way down the rig's forearm (the generated hand was cut off there), so aim the forearm's
+       end into the glove along the fingers: the cuff then meets the wrist instead of stopping short of a floating hand */
+    T = T.clone().addScaledVector(f, .18 * S.fore.getWorldPosition(v2).distanceTo(S.end.getWorldPosition(v3)));
+    /* out of reach (2026-11-23): the arm stopped short at full stretch and the glove hung alone at the target (the
+       generated hand, stuck to the forearm, used to hide it). The shoulder is off screen: slide it toward the hand */
+    { const s0 = S.up.getWorldPosition(new THREE.Vector3()), e0 = S.fore.getWorldPosition(new THREE.Vector3()), w0 = S.end.getWorldPosition(new THREE.Vector3());
+      const over = s0.distanceTo(T) - (s0.distanceTo(e0) + e0.distanceTo(w0)) * .97;
+      if (over > 0) { const p = S.up.parent; p.updateMatrixWorld(true); const to = p.worldToLocal(s0.clone().addScaledVector(T.clone().sub(s0).normalize(), over)); S.up.position.copy(to); S.up.updateMatrixWorld(true); } }
     const sh = S.up.getWorldPosition(new THREE.Vector3()), el0 = S.fore.getWorldPosition(new THREE.Vector3()), wr0 = S.end.getWorldPosition(new THREE.Vector3());
     const la = sh.distanceTo(el0), lb = el0.distanceTo(wr0), d = v1.copy(T).sub(sh), dist = THREE.MathUtils.clamp(d.length(), Math.abs(la - lb) + 1e-4, (la + lb) * .999);
     d.normalize(); const ca = (la * la + dist * dist - lb * lb) / (2 * la * dist), along = la * ca, up = la * Math.sqrt(Math.max(0, 1 - ca * ca));
@@ -377,6 +392,13 @@ export function makeArms(sleeve, team = 0) {
     turnTo(S.up, v2.copy(el0).sub(sh).normalize(), v3.copy(elbow).sub(sh).normalize());
     const e1 = S.fore.getWorldPosition(new THREE.Vector3()), w1 = S.end.getWorldPosition(new THREE.Vector3());
     turnTo(S.fore, v2.copy(w1).sub(e1).normalize(), v3.copy(T).sub(e1).normalize());
+    /* wrist twist (2026-11-23): the hand bone turns on its own, the forearm only aimed, so a knife or nade grip put all
+       the roll in the wrist skin and tore the sleeve like a sweet wrapper. Roll the forearm about its own line to most
+       of the hand's turn, as a real forearm does */
+    if (S.refN) { const ax = v3.copy(T).sub(e1).normalize(), fq = S.fore.getWorldQuaternion(new THREE.Quaternion());
+      const cur = S.refN.clone().applyQuaternion(fq), want = nn.clone(); cur.addScaledVector(ax, -cur.dot(ax)); want.addScaledVector(ax, -want.dot(ax));
+      if (cur.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { const ang = Math.atan2(ax.dot(v2.crossVectors(cur, want)), cur.dot(want));
+        setWorldQuat(S.fore, new THREE.Quaternion().setFromAxisAngle(ax, ang * .85).multiply(fq)); } }
   }
   return { root, mesh,
     /* r and l: { at, fingers, palm, pole } in world space, l may be null (one-handed: it hangs); o: curls */

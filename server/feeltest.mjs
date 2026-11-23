@@ -159,4 +159,7 @@ const grounded = () => { const s = newPlayer(); s.pos.set(5, 0, 15); for (let i 
   const W = WEAPONS; check("AK settles slower and kicks harder than the M4", W.ak.rec > W.m4.rec && W.ak.pr < W.m4.pr && W.ak.vk > W.m4.vk && W.ak.rise > W.m4.rise);
   check("Deagle flips most of the pistols, USP-S flashes least", W.deagle.rise > W.glock.rise && W.deagle.rise > W.usp.rise && W.usp.fl < W.glock.fl);
   check("SMGs recover faster than rifles", W.mp9.rec < W.m4.rec && W.mp9.rec < W.ak.rec); }
+{ const reset = (w, n) => { let x = n, t = 0; while (x > 0) { x *= Math.exp(-DT * 4.06 / WEAPONS[w].rec); if (x < .5) x = 0; t += DT; } return t; };
+  const b = reset("ak", 3), f = reset("ak", 29);
+  check("AK tap burst needs a pause, full spray resets in rec", b > .15 && b < .3 && Math.abs(f - WEAPONS.ak.rec) < .05, `3 shots ${b.toFixed(2)} s, 30 shots ${f.toFixed(2)} s`); }
 console.log(fails ? `${fails} FAILED` : "all passed"); process.exit(fails ? 1 : 0);

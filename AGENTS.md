@@ -1,7 +1,7 @@
 # Working on NG - Newground
 
 **How we work:** one thing at a time, finished from start to end against its checklist in `CHECKLISTS.md` (a gun has
-11 stages, from its model to the operator playing it), and it stays switched off until then: guns in `sim.js` `OFF`
+11 stages, from its model to the operator playing it), and it can be switched off until then: guns in `sim.js` `OFF`
 (nothing hands them out: pickups, buying, bots, the Gun Game ladder), modes as `hidden` cards in the menu. Do not open
 new features beside the one in progress.
 

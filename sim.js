@@ -12,14 +12,15 @@ export const C = {
   friction: 5.2, stopspeed: 100 * U, gravity: 800 * U, jump: 301.993 * U,
   radius: 16 * U, stand: 72 * U, crouch: 54 * U, eyeStand: 64 * U, eyeCrouch: 46 * U
 };
-export const SPRAY = [[0,0],[0,.45],[.1,1.15],[.2,2.05],[.1,3.0],[-.2,3.9],[-.45,4.7],[-.1,5.35],[.55,5.85],[1.4,6.15],[2.1,6.3],[1.8,6.45],
-  [.6,6.55],[-.8,6.6],[-1.9,6.7],[-2.6,6.85],[-2.2,6.95],[-.9,7.05],[.6,7.1],[1.8,7.2],[2.6,7.25],[2.2,7.3],[1.0,7.35],[-.6,7.4],
-  [-1.9,7.45],[-2.7,7.55],[-2.3,7.6],[-.9,7.65],[.6,7.7],[1.9,7.75]];
-/* each rifle its own pattern, after CS:GO's shapes (gun feel pass, 2026-11-14): the M4 climbs lower and swings the
-   other way first, narrower; the AUG is the tightest, a low climb and a small weave. Degrees of view kick per shot */
-const SPRAY_M4 = [[0,0],[0,.4],[-.05,1.0],[-.1,1.75],[-.05,2.55],[.1,3.3],[.2,3.95],[.1,4.45],[-.2,4.85],[-.6,5.1],[-1.0,5.25],
-  [-1.2,5.35],[-.9,5.45],[-.3,5.5],[.4,5.55],[1.1,5.6],[1.5,5.7],[1.3,5.75],[.7,5.8],[0,5.85],[-.7,5.9],[-1.2,5.95],[-1.3,6.0],
-  [-.9,6.05],[-.2,6.1],[.5,6.15],[1.0,6.2],[1.2,6.25],[.9,6.3],[.3,6.35]];
+export const SPRAY = [[0,0],[.05,.3],[0,.8],[-.1,1.5],[.05,2.4],[.2,3.4],[.1,4.4],[-.15,5.2],[-.35,5.8],[-.2,6.2],
+  [-.9,6.4],[-1.7,6.55],[-2.3,6.6],[-2.5,6.7],[-2.1,6.8],[-1.2,6.85],[0,6.9],[1.1,7.0],[2.0,7.05],[2.7,7.1],[2.9,7.15],
+  [2.4,7.2],[1.3,7.3],[.1,7.35],[-1.0,7.4],[-1.9,7.45],[-2.2,7.5],[-1.6,7.55],[-.6,7.6],[.4,7.65]];
+/* hand-made patterns (2026-11-23). AK: first 4 shots tight (a tap burst stays on the head), a hard straight climb to
+   shot 10, then uneven sweeps left, right, left, each a different length. M4: lower climb, swings right first, slower
+   and narrower sweeps. Each rifle its own pattern (gun feel pass, 2026-11-14): the AUG is the tightest, a low climb and a small weave. Degrees of view kick per shot */
+const SPRAY_M4 = [[0,0],[0,.25],[.05,.65],[0,1.2],[-.05,1.85],[0,2.6],[.1,3.3],[.15,3.9],[.25,4.35],[.5,4.7],[.9,4.95],
+  [1.3,5.1],[1.5,5.2],[1.4,5.3],[1.0,5.35],[.4,5.4],[-.3,5.45],[-.9,5.5],[-1.3,5.55],[-1.4,5.6],[-1.2,5.65],[-.7,5.7],
+  [-.1,5.75],[.5,5.8],[1.0,5.85],[1.2,5.9],[1.0,5.95],[.5,6.0],[-.1,6.05],[-.6,6.1]];
 const SPRAY_AUG = [[0,0],[0,.35],[-.05,.85],[-.1,1.45],[-.2,2.05],[-.3,2.6],[-.35,3.05],[-.3,3.4],[-.1,3.65],[.2,3.85],[.5,4.0],
   [.75,4.1],[.85,4.2],[.7,4.25],[.35,4.3],[-.1,4.35],[-.5,4.4],[-.8,4.45],[-.85,4.5],[-.6,4.55],[-.2,4.6],[.25,4.65],[.6,4.7],
   [.8,4.75],[.7,4.8],[.35,4.85],[-.05,4.9],[-.4,4.95],[-.6,5.0],[-.5,5.05]];
@@ -115,8 +116,7 @@ for (const [w, f] of Object.entries(FEEL)) Object.assign(WEAPONS[w], f);
 export const NADES = ["he", "flash", "smoke", "molotov", "decoy"];
 /* guns switched off for now (operator 2026-11-23: one mode, perfect each gun alone): those without a real model yet.
    Their code and numbers stay; nothing hands them out (no pickup, no buy, no bot, no ladder) while they are in here */
-export const OFF = new Set(["zeus", "aug", "sg553", "m4a1s", "famas", "galil", "negev", "ssg08", "mac10", "mp7", "ump", "p90",
-  "p250", "fiveseven", "tec9", "cz75", "nova", "xm1014"]);
+export const OFF = new Set([]);   // empty again (operator 2026-11-23 "unhide all"); the list was: zeus aug sg553 m4a1s famas galil negev ssg08 mac10 mp7 ump p90 p250 fiveseven tec9 cz75 nova xm1014
 export const WIDS = Object.keys(WEAPONS);                     // index <-> id on the wire
 export const DMG = { head: 36 * 4, body: 36, leg: 27 }, FIRE_INTERVAL = .1, RELOAD = 2.43, MAG = 30, RESERVE = 90;
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -379,7 +379,7 @@ export function weapon(s, cmd, t, seed) {
     if (W0.shell) { if (s.res > 0 && s.mag < W0.mag) { s.mag++; s.res--; } s.reloadAt = s.mag < W0.mag && s.res > 0 ? t + W0.shell : 0; }
     else { const n = Math.min(W0.mag - s.mag, s.res); s.mag += n; s.res -= n; s.reloadAt = 0; }
   }
-  if (t - s.lastShot > (W0.rate || .1)) { s.spray = Math.max(0, s.spray - DT * 30 / (W0.rec || .42)); const k = Math.exp(-DT * (W0.pr || 9)); s.punchX *= k; s.punchY *= k; }
+  if (t - s.lastShot > (W0.rate || .1)) { s.spray *= Math.exp(-DT * 4.06 / (W0.rec || .42)); if (s.spray < .5) s.spray = 0;   /* curve, not a line (2026-11-23): a full spray still resets in rec, but a 3-shot burst needs ~.45 rec (AK ~.2 s), so fast taps climb */ const k = Math.exp(-DT * (W0.pr || 9)); s.punchX *= k; s.punchY *= k; }
   if (!s.alive) return null;
   if (W0.c4) { s.zoomHeld = !!cmd.zoom; return null; }   // the bomb: holding fire on a site plants it, which the server decides
   // a grenade: left click cocks a full throw, right click a lob, both together a medium one; it flies on release

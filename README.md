@@ -3,10 +3,9 @@
 A multiplayer first-person shooter in the browser, played on a new AI-generated world every day.
 No install: open a link and play, on desktop or phone.
 
-**Right now the game is scoped down on purpose:** one mode (Today's match, deathmatch on today's map with everyone
-online) and only the guns that have a real model (AK-47, M4A4, AWP, MP9, Glock-18, USP-S, Desert Eagle, the knife).
-Everything else below is built and kept in the code, switched off (`OFF` in `sim.js` for guns, `hidden` cards in the
-menu for modes) until it has been finished from start to end against [CHECKLISTS.md](CHECKLISTS.md), one at a time.
+All modes and guns are on. New work is finished from start to end against [CHECKLISTS.md](CHECKLISTS.md), one
+thing at a time, and a part can be switched off while it is in progress (`OFF` in `sim.js` for guns, `hidden` cards in
+the menu for modes).
 
 ## What is in it
 
