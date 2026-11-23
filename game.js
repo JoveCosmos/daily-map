@@ -4,7 +4,7 @@
    view time they were aimed in, so the server can rewind the others to what this screen showed (lag compensation). */
 import * as THREE from "three";
 import { World, C, block, GAIT, DT, U, DEG, clamp, newPlayer, move, weapon, eye, inaccuracy, standinParts, gltfGeometries, WEAPONS, WIDS, wpn, NADES, NADE, viewDir } from "./sim.js";
-import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES, loadGunModels, loadArms, makeArms, loadFighters } from "./models.js";
+import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES, loadGunModels, loadArms, makeArms, loadFighters, BUST } from "./models.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { gltf, $, params, AUTO, TEAM, TEAMCOL, renderer, PHONE, scene, camera, sun, TOUCH, nowS } from "./client/core.js";
 import { dryFire, MG, audio, AC, OUT, at, tink, dest, CLIPS, playClip, deathSound, muffle, gunSound, SUBSONIC, whiz, crack, impactSound, swish, reloadSound, pinSound, bodyHit, headDink, dmgNum, clack, probeEnv, tickDmg, ENV } from "./client/audio.js";
@@ -56,8 +56,8 @@ async function loadMap(id) {
   let geoms;
   if (m.kind === "procedural") { const parts = standinParts(); scene.add(standinLook(parts)); geoms = Object.values(parts).flat(); }
   else {
-    const gl = await gltf().loadAsync("maps/" + m.collision, prog(0)); geoms = gltfGeometries(gl.scene, m);
-    if (m.visual) { const v = await gltf().loadAsync("maps/" + (TOUCH && m.visualMobile || m.visual), prog(1));   // phones get a lighter cut of the same world v.scene.traverse(o => { if (o.isMesh) { const tx = o.material && o.material.map; o.material = new THREE.MeshBasicMaterial({ map: tx || null, vertexColors: !tx && !!o.geometry.attributes.color, side: THREE.DoubleSide, toneMapped: false }); } });   // its colours are already final: no second tone mapping
+    const gl = await gltf().loadAsync("maps/" + m.collision + BUST, prog(0)); geoms = gltfGeometries(gl.scene, m);
+    if (m.visual) { const v = await gltf().loadAsync("maps/" + (TOUCH && m.visualMobile || m.visual) + BUST, prog(1));   // phones get a lighter cut of the same world v.scene.traverse(o => { if (o.isMesh) { const tx = o.material && o.material.map; o.material = new THREE.MeshBasicMaterial({ map: tx || null, vertexColors: !tx && !!o.geometry.attributes.color, side: THREE.DoubleSide, toneMapped: false }); } });   // its colours are already final: no second tone mapping
       v.scene.position.set(...(m.offset || [0, 0, 0])); v.scene.quaternion.setFromEuler(new THREE.Euler(...(m.rotate || [0, 0, 0]).map(d => d * DEG), "XYZ")); v.scene.scale.setScalar(m.scale || 1); scene.add(v.scene); }
     if (m.sky) scene.background = new THREE.Color(m.sky);
   }

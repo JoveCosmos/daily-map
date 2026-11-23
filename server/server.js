@@ -1063,8 +1063,13 @@ const server = http.createServer((req, res) => {
     if (!z) { z = zlib.gzipSync(fs.readFileSync(f), { level: 9 }); GZ.set(key, z); }
     res.writeHead(200, { "content-type": type, "content-encoding": "gzip", "vary": "accept-encoding", "cache-control": cache }); res.end(z); return;
   }
+  // models and maps are replaced under the same name (a new gun, a fixed map), so the browser asks again every load
+  // and gets a 304 while it is unchanged: a day's cache kept old models under new code (phones saw wrong, huge guns)
+  const st = fs.statSync(f), fresh = p.startsWith("/models/") || p.startsWith("/maps/");
+  const tag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+  if (fresh && req.headers["if-none-match"] === tag) { res.writeHead(304, { etag: tag, "cache-control": "no-cache" }); res.end(); return; }
   // the size goes with it, so the page can show how far a map download has got
-  res.writeHead(200, { "content-type": type, "cache-control": cache, "content-length": fs.statSync(f).size });
+  res.writeHead(200, { "content-type": type, "cache-control": fresh ? "no-cache" : cache, ...(fresh ? { etag: tag } : {}), "content-length": st.size });
   fs.createReadStream(f).pipe(res);
 });
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 64 * 1024 });

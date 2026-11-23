@@ -136,12 +136,14 @@ const IMPORTED = {
    everything on a phone, where the full set ran out of graphics memory (the screen broke up and the game hung) */
 let LITE = false;
 export function setLite(v) { LITE = !!v; }
+// one-time change to every model and map address: phones cached the old files for a day under the new code
+export const BUST = "?v=20261123";
 export const fileFor = f => (LITE ? "m-" : "") + f;
 const LOADED = {}, LOADED3 = {};
 export async function loadGunModels(loader) {
   await Promise.all(Object.entries(IMPORTED).flatMap(([w, d]) => [
-    (async () => { try { LOADED3[w] = fitImported(w, d, (await loader.loadAsync("models/m-" + d.file)).scene); if (LITE) LOADED[w] = LOADED3[w]; } catch (e) {} })(),
-    LITE ? null : (async () => { try { LOADED[w] = fitImported(w, d, (await loader.loadAsync("models/" + d.file)).scene); } catch (e) {} })()]));
+    (async () => { try { LOADED3[w] = fitImported(w, d, (await loader.loadAsync("models/m-" + d.file + BUST)).scene); if (LITE) LOADED[w] = LOADED3[w]; } catch (e) {} })(),
+    LITE ? null : (async () => { try { LOADED[w] = fitImported(w, d, (await loader.loadAsync("models/" + d.file + BUST)).scene); } catch (e) {} })()]));
   return Object.keys(LOADED);
 }
 function fitImported(w, d, scene) {
@@ -315,7 +317,7 @@ export const sleeveMaterial = team => kit(team).cloth;
    poses the rig into their shape and gives them its weights, so the posing below works on them unchanged; they keep
    their own colours. A team without its file falls back to the CC0 arms in its sleeves */
 const ARMS = { scene: null, team: [null, null], used: false };
-const load1 = async (loader, f) => { try { return (await loader.loadAsync("models/" + f)).scene; } catch (e) { return null; } };
+const load1 = async (loader, f) => { try { return (await loader.loadAsync("models/" + f + BUST)).scene; } catch (e) { return null; } };
 export async function loadArms(loader) {
   [ARMS.scene, ARMS.team[0], ARMS.team[1]] = await Promise.all(["arms.glb", fileFor("arms-atlas.glb"), fileFor("arms-ember.glb")].map(f => load1(loader, f)));
   return !!(ARMS.scene || ARMS.team[0] || ARMS.team[1]);
@@ -415,7 +417,7 @@ export function makeArms(sleeve, team = 0) {
 const FIGHTERS = { 0: ["atlas1", "atlas2", "atlas3", "atlas4"], 1: ["ember1", "ember2", "ember3", "ember4", "ember5"] }, HY = { 0: [], 1: [] }, HEIGHT = 1.78;
 export async function loadFighters(loader) {
   await Promise.all(Object.entries(FIGHTERS).flatMap(([team, names]) => names.map(async n => {
-    try { const scene = (await loader.loadAsync("models/" + fileFor(`fighter-${n}.glb`))).scene; HY[team].push(prepFighter(scene, +team, n)); } catch (e) {} })));
+    try { const scene = (await loader.loadAsync("models/" + fileFor(`fighter-${n}.glb`) + BUST)).scene; HY[team].push(prepFighter(scene, +team, n)); } catch (e) {} })));
   for (const t of [0, 1]) HY[t].sort((a, b) => a.n < b.n ? -1 : 1);
   return HY[0].length + HY[1].length;
 }
