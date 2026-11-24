@@ -73,7 +73,8 @@ tools/add-map.sh <world.glb> <id> "<Display name>" [--scale 35] [--activate] [--
 It builds a collision mesh (about 200k faces), a desktop visual (compressed, half the triangles, 2048 px textures) and a
 lighter phone visual, removes textures the game never uses, writes `maps/<id>.json`, checks the map is playable, and
 renders a menu preview. It refuses a map with too little walkable ground, a walk shorter than 15 m or longer than 120 m,
-or fewer than 3 safe spawns a team, and reports enclosed pockets. Before the check, `tools/fillpits.mjs` guards the collision against
+or fewer than 3 safe spawns a team, and reports enclosed pockets and how much spawn ground each side has (spots at
+least 4 m from the map's edge and not in a tight place: none refuses the map, fewer than 24 warns). Before the check, `tools/fillpits.mjs` guards the collision against
 holes: an invisible floor tile in every hole of the ground, a lid on every small pit, and an invisible rail along a
 large lower area (a street below a raised yard), so nobody can fall where they cannot climb back out; the check then
 refuses a map with any pit left. Nothing reaches `maps/` until every step has passed.

@@ -10,7 +10,7 @@ import { WebSocketServer } from "ws";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, block, weapon, eye, eyePos, height, hitBox, GAIT, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U, OFF, bombSites } from "../sim.js";
+import { World, TICK, DT, C, DMG, DEG, clamp, newPlayer, move, block, weapon, eye, eyePos, height, hitBox, GAIT, standinParts, gltfGeometries, MAG, RESERVE, WEAPONS, WIDS, equip, damageFor, penetrate, armour, held, draw, NADES, NADE, throwFrom, nadeStep, viewDir, U, OFF, bombSites, spawnPoints } from "../sim.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = +(process.env.PORT || 8945), MAP_ID = (process.env.MAP || "standin").replace(/[^a-z0-9_-]/gi, "");
@@ -77,15 +77,10 @@ const BOTNAMES = ["Vex", "Murk", "Rook", "Sable", "Ash", "Kite", "Bram", "Juno",
 /* where to (re)spawn: always inside the team's own spawn area, the two areas at opposite ends of the map; within it, the
    point no living enemy can see and furthest from the nearest one, so nobody appears in front of a rifle */
 /* test only (DUEL=1): the two sides spawn 12-18 m apart with a clear line between them, to measure hit registration */
-const SIDE = W.side || (W.side = (() => { const dA = W.dijkstra(W.spawn[0][0] ?? 0), dB = W.dijkstra(W.spawn[1][0] ?? 0);   // once per map, shared by its rooms
-  // never spawn in a pocket: a generated world can leave a house interior or a low nook joined to the street through a
-  // gap in its mesh, and a spawn there looks like being stuck in a wall. Out: a ceiling within
-  // 2.5 m above the eyes, or walls within 1.2 m on at least 6 of 8 sides
-  const UP = new THREE.Vector3(0, 1, 0), D8 = [...Array(8)].map((_, k) => new THREE.Vector3(Math.cos(k * Math.PI / 4), 0, Math.sin(k * Math.PI / 4)));
-  const open = n => { const o = n.p.clone(); o.y += 1.6; if (W.first(o, UP, 2.5)) return false; let walls = 0; for (const d of D8) if (W.first(o, d, 1.2)) walls++; return walls < 6; };
-  const ok = W.spawnOk = W.nodes.map(open);   // kept for Retakes' Atlas spawns, which may lie outside both sides
-  return [W.nodes.filter(n => ok[n.i] && dA[n.i] < dB[n.i] * .55).map(n => n.i), W.nodes.filter(n => ok[n.i] && dB[n.i] < dA[n.i] * .55).map(n => n.i)]; })());
-log(`[${code}] team sides: ${SIDE[0].length} / ${SIDE[1].length} spawn points`);
+/* the spawn points (sim.js spawnPoints, once per map): never by the map's edge, never in a pocket, an alley or under a
+   low roof. W.spawnOk (every good point, either side) is kept for Retakes' spawns, which may lie outside both sides */
+const SPW = spawnPoints(W), SIDE = SPW.side; W.spawnOk = SPW.ok;
+log(`[${code}] team sides: ${SIDE[0].length} / ${SIDE[1].length} spawn points` + (SPW.good[0] < SIDE[0].length || SPW.good[1] < SIDE[1].length ? ` (only ${SPW.good[0]} / ${SPW.good[1]} clear of the edge and in room: the best kept)` : ""));
 let DUEL = null;
 if (process.env.DUEL === "1") {
   const A = W.nodes[W.spawn[0][0]], up = p => p.clone().setY(p.y + 1.4);
@@ -101,22 +96,28 @@ function pickSpawn(e) {
        that (2026-11-23: the fixed "more than 28 m on Atlas's side" matched no point on any map once the sites moved to
        25-45% of the walk from the CT spawn, so every Retakes round fell back to the normal spawn: on Market B, whose
        site Atlas's side surrounds, within 8.5 m of the bomb, among the Ember) */
-    const pool = e.team === 1 ? W.nodes.filter(n => { const d = n.p.distanceTo(sp); return d > 3 && d < 13; })
+    const pool = e.team === 1 ? (W.rtNear || (W.rtNear = {}))[SITES[G.rtSite].name] || (W.rtNear[SITES[G.rtSite].name] = (() => {   // good spawn points round the site, if there are enough
+          const all = W.nodes.filter(n => { const d = n.p.distanceTo(sp); return d > 3 && d < 13; }), ok = all.filter(n => W.spawnOk[n.i]); return ok.length >= 6 ? ok : all; })())
       : (W.rtFar || (W.rtFar = {}))[SITES[G.rtSite].name] || (W.rtFar[SITES[G.rtSite].name] = (() => { const tSide = new Set(SIDE[1]);
           const s = W.nodes.filter(n => !tSide.has(n.i) && W.spawnOk[n.i]).map(n => n.i).map(i => [W.nodes[i], W.nodes[i].p.distanceTo(sp)]).sort((a, b) => b[1] - a[1]);
           const far = s.filter(x => x[1] > 16 && x[1] < 30); return (far.length >= 8 ? far : s.slice(0, Math.max(1, Math.ceil(s.length / 3)))).map(x => x[0]); })());
     if (pool.length) return pool[(Math.random() * pool.length) | 0]; }
   if (process.env.SPAWN_AT && !e.bot) { const x = PK.find(k => k.w === process.env.SPAWN_AT); if (x) return { p: x.p.clone().add(new THREE.Vector3(.6, 0, 0)), i: 0 }; }   // test only
-  // the team's side: every walkable point clearly nearer its own end of the map than the other's (about a third of the
-  // map), not a fixed spot. A random point of it no living enemy can see and no closer than 15 m to one (a fixed
-  // spot got camped). Falls back to the team's core spawn cluster only if the whole side is covered
-  const enemies = [...ents.values()].filter(v => v.team !== e.team && v.s.alive);
+  // the team's side (its spawn points, above), not a fixed spot: a random point no living enemy can see, no closer than
+  // 15 m to one (a fixed spot got camped) and not on top of anyone. If the whole side is covered: the point of it
+  // farthest from the nearest enemy (2026-11-24: it fell back to the team's end of the map, the most remote corner,
+  // where everyone who could not be placed then piled up: on the factory, a dead-end alley at the map's edge)
+  const enemies = [...ents.values()].filter(v => v.team !== e.team && v.s.alive), bodies = [...ents.values()].filter(v => v !== e && v.s.alive);
   const safe = i => { const p = W.nodes[i].p, head = p.clone(); head.y += C.eyeStand;
+    for (const v of bodies) if (v.s.pos.distanceTo(p) < 1.6) return false;
     for (const v of enemies) { const d = v.s.pos.distanceTo(p); if (d < 15 || (d < 70 && W.clear(eyePos(v.s), head))) return false; } return true; };
   const side = SIDE[e.team], tries = Math.min(side.length, 80);
   for (let k = 0; k < tries; k++) { const i = side[(Math.random() * side.length) | 0]; if (safe(i)) return W.nodes[i]; }
-  const core = W.spawn[e.team].filter(i => side.includes(i)).length ? W.spawn[e.team].filter(i => side.includes(i)) : side;
-  return W.nodes[core[(Math.random() * core.length) | 0]];
+  let best = side[(Math.random() * side.length) | 0], bd = -1;
+  for (let k = 0; k < Math.min(side.length, 60); k++) { const i = side[(Math.random() * side.length) | 0], p = W.nodes[i].p; let d = 1e9;
+    for (const v of enemies) d = Math.min(d, v.s.pos.distanceTo(p)); for (const v of bodies) if (v.s.pos.distanceTo(p) < 1.6) d = Math.min(d, 0);
+    if (d > bd) { bd = d; best = i; } }
+  return W.nodes[best];
 }
 /* spawn facing: toward the enemy's side, but never into a wall. 24 eye-height rays; each direction scores its open
    distance (up to 25 m) plus a pull toward the enemy, so you start looking down the most open way they could come */
@@ -892,7 +893,11 @@ function step() {
   const floor = W.bounds.min.y - 4;
   for (const e of ents.values()) {
     if (e.s.alive && e.s.pos.y < floor) { spawnAt(e); log(`[${code}] ${e.name} fell out of the world, respawned`); }   // a slip through the mesh: back in, no death
-    const othersOf = () => { const l = []; for (const x of ents.values()) if (x !== e && x.s.alive) l.push({ pos: x.s.pos, duck: x.s.duck }); return l; };
+    /* who blocks whom: everyone blocks everyone (2026-11-22, as CS), except that a teammate bot never blocks a human (2026-11-24,
+       operator: bots stood in the one narrow way out of a spawn by the map's edge and held him there): the human walks on,
+       and the bot's own turn here shoves it aside (bots are still blocked by everyone), so a bot standing in a narrow way
+       is pushed along out of it, or at worst walked through. The page leaves teammate bots out of its own blocking too */
+    const othersOf = () => { const l = []; for (const x of ents.values()) if (x !== e && x.s.alive && (e.bot || !x.bot || x.team !== e.team)) l.push({ pos: x.s.pos, duck: x.s.duck }); return l; };
     if (e.bot) { if (!frozen()) botTick(e); else if (e.s.alive) move(W, e.s, { f: 0, s: 0, yaw: e.s.yaw, pitch: e.s.pitch }); block(e.s, othersOf()); continue; }   // bots stand on the ground in the freeze too
     // every command that has arrived, at most 8 a tick (a client cannot run faster than real time for long)
     // a client's clock stays within a quarter second of real time either way: idle time cannot be saved up and spent

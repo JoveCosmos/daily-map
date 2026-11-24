@@ -28,6 +28,13 @@ if (out.longestWalk < 15) problems.push("longest walk under 15 m (too small to p
 if (out.longestWalk > 120) problems.push("longest walk over 120 m (scale too large?)");
 if (Math.min(...out.spawns) < 3) problems.push("a team has fewer than 3 spawn points");
 if (out.pits) problems.push(`${out.pits} pits a player can fall into and not climb out of (tools/fillpits.mjs fills them)`);
+/* spawn ground (2026-11-24): the points each side really spawns on (sim.js spawnPoints): 4 m or more from the map's
+   edge, a 3 m line through them at the narrowest, open overhead. Fewer than SPAWN.min good ones and the server makes do
+   with the best it has (near an edge or in a tight spot): a warning; none at all on a side is a problem */
+if (SIM.spawnPoints) { const sp = SIM.spawnPoints(W); out.spawnGround = sp.good;
+  for (const t of [0, 1]) { const name = t ? "Ember" : "Atlas";
+    if (!sp.good[t]) problems.push(`${name} has no spawn point clear of the map's edge and in room (spawns would be at the edge or in alleys)`);
+    else if (sp.good[t] < SIM.SPAWN.min) warnings.push(`${name} has only ${sp.good[t]} spawn points clear of the map's edge and in room (the server keeps the best ${SIM.SPAWN.min})`); } }
 
 /* the play tests (2026-11-23): what the Counter-Strike audit found on the first eight maps, measured on every new one.
    Run with the game's own movement (a box's step of 18 units, slopes to 45 degrees), so a sim.js without it skips them */

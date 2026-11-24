@@ -5,7 +5,7 @@ listed so anyone can trace a sound to its source.
 
 | Files | Source | License |
 |---|---|---|
-| `rifle_*`, `pistol_*`, `smg_*`, `shotgun_*`, `sniper_*`, `ak_*`, `m4_*`, `glock_*`, `usp_*`, `deagle_*` | The Free Firearm Sound Library, via OpenGameArt (opengameart.org/content/the-free-firearm-sound-library) | CC0 |
+| `rifle_*`, `pistol_*`, `smg_*`, `shotgun_*`, `sniper_*`, `ak_*`, `m4_*`, `glock_*`, `usp_*`, `deagle_*`, `awp_*` | The Free Firearm Sound Library, via OpenGameArt (opengameart.org/content/the-free-firearm-sound-library) | CC0 |
 | `mag_out`, `mag_in`, `slide` | "Handgun Reload Sound Effect" (a real handgun), via OpenGameArt (opengameart.org/content/handgun-reload-sound-effect) | CC0 |
 | `bolt_back`, `bolt_fwd`, `charge`, `click` | "equipment clicks III" (a real bolt-action rifle), via OpenGameArt (opengameart.org/content/equipment-clicks-iii) | CC0 |
 | `knife_slash1`, `knife_slash2`, `knife_draw` | "80 CC0 RPG SFX" (blade_01 to blade_03), via OpenGameArt (opengameart.org/content/80-cc0-rpg-sfx) | CC0 |
@@ -25,5 +25,9 @@ toward its character, so no two sound alike: `ak_*` the AK-47 (the last shot of 
 pitched down 7%, chest thump at 110 Hz and bark at 600 Hz, a short slap of echo; `m4_*` the AR-15, low end cut, crack at
 3.2 kHz, dry and short; `glock_*` the Walther PPQ 9 mm, crisp; `usp_*` the same 9 mm shot under a 1.1 kHz low-pass, a
 suppressed thud (the slide click is played over it in code); `deagle_*` the 1911 .45, pitched down 14%, heavy low end
-and a longer tail. Near takes from the close microphone, far takes from the distant one with more of the range.
+and a longer tail; `awp_*` (2026-11-24) the Tikka T3 bolt-action (.30-06), its whole report kept (the old
+`sniper_3006` cut stopped at 0.9 s and had lost its low end), pitched down 8% toward the AWP's .338 magnum, +4 dB at
+90 Hz and +2.5 dB at 2.8 kHz, the near takes with the distant microphone's echo of the range blended in under them from
+60 ms (9 dB down, above 2.5 kHz cut), 2.6 s; the far takes from the distant microphone, 2.8 s, ending before the shooter
+works the bolt. Near takes from the close microphone, far takes from the distant one with more of the range.
 The knife: a real blade over the code's swish on a slash, the blade's draw when it comes out.

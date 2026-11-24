@@ -494,7 +494,8 @@ function actNow(o, s1, speed) {
   return { k: a.k, p: Math.min(1, p) };
 }
 /* the others as the client draws them, for block() (sim.js) */
-function blockers() { const l = []; for (const o of others.values()) if (o.alive && !o.gone && o.model.last) l.push({ pos: o.model.last, duck: o.vd || 0 }); return l; }
+function blockers() { const l = []; for (const o of others.values()) { const r = roster.get(o.id);   // a teammate bot does not block you (the server's rule, 2026-11-24): it is shoved aside
+    if (o.alive && !o.gone && o.model.last && !(r && r.bot && r.team === myTeam)) l.push({ pos: o.model.last, duck: o.vd || 0 }); } return l; }
 function drawOthers() {
   const rt = viewTime(); findAimed();
   for (const o of others.values()) {

@@ -76,6 +76,9 @@ multiplayer correct, and the traps that already cost time once. Read it before t
 - **Smoke lineups** are found by the server once per map, at start (`lineups()`, run by a warm-up room per map): it throws smokes from the attackers' route with the
   real grenade physics (`botAim`) and keeps two per site that land on it. Clients only draw them (`setLineups`).
 - **Sound** is in client/audio.js: recorded clips (`sounds/`, SOUNDS.md, `CLIP_NAMES`) and code-made ones (cracks, impacts).
+  `GUNCLIP` gives each gun its recording, pitch and (third number) its share of the street's echo; the drawn guns have
+  their own recordings, kept whole: weight belongs in the recording, not in made-up layers (the AWP's old sine boom and
+  replayed echo sounded like a drum machine).
   Anything with a place in the world plays through `at(pos, fn)`, which pans it, muffles it behind walls, delays it by
   distance and sends it to the echo; `probeEnv` sets the echo from how enclosed the listener is.
 - **Maps** (`maps/<id>.json`) point to a visual mesh, a phone visual and a collision mesh, plus a scale. The server
@@ -120,10 +123,20 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   and the server answered, or players stare at the sky turning a camera nothing renders.
 - **A dropped connection rejoins by reloading.** The page saves a "rejoin" note and reloads straight back into the
   room; do not try to rebuild a game on a dead socket.
-- **Generated maps have holes and pockets.** Spawns skip points with a ceiling close above or walls on most sides, a
-  step with no ground within 6.5 m below is refused, and anyone 4 m below the map is respawned. Holes and pits are filled in
-  the collision when a map is added (`tools/fillpits.mjs`, shared finder `tools/pits.mjs`); K (respawn if stuck) stays
-  as the last resort.
+- **Generated maps have holes and pockets.** A step or a jump over no ground within 6.5 m below is refused, and anyone
+  4 m below the map is respawned. Holes and pits are filled in the collision when a map is added (`tools/fillpits.mjs`,
+  shared finder `tools/pits.mjs`); K (respawn if stuck) stays as the last resort.
+- **A floor has cracks: never test it with one ray.** The check that keeps you on the map looked under your centre
+  alone in the air, and a running jump over a crack stopped dead mid-air. `overVoid` (sim.js) looks under the whole
+  body, as the walk's edge guard does; anything new that asks "is there ground here?" should do the same.
+- **The far ends of the map are not spawns.** `W.spawn` (the two ends of the longest walk) only anchors each side: those
+  ends are by nature the most remote corners, often a dead-end alley at the map's edge. Spawns come from `spawnPoints`
+  (sim.js): 4 m or more from the map's edge (found by flooding in from outside the map, so a crack is not an edge), a
+  3 m line through the spot at its narrowest, open overhead. When every spot is in an enemy's sight the server takes the
+  one farthest from them, and nobody spawns on top of anyone.
+- **A teammate bot never blocks a human.** Players block each other as in CS, but bots in a narrow way held a player
+  there for good. A human is not stopped by a teammate bot (the server's `othersOf`, the page's `blockers()`); the bot's
+  own turn shoves it aside. Bots are still blocked by everyone.
 - **Phones are a different machine.** They load a lighter visual (`visualMobile`), start without shadows, and judge
   performance by real frame time. Test touch in landscape: a look-drag that starts on a button presses it.
 - **The HUD ignores the pointer.** `#hud` has `pointer-events: none` so overlays never block play; a panel with

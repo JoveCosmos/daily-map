@@ -46,7 +46,7 @@ function echoTail(kind) { const room = kind === "room", len = room ? 1.3 : .9, n
 /* recorded sound (2026-11-16): real gunshots from The Free Firearm Sound Library and airsoft reloads, both CC0 (SOUNDS.md).
    Each class of gun has two near takes (your own and close shots) and two far ones (the range's echo kept); a shot picks one
    and varies its pitch a little, so an automatic never repeats itself. Until a clip is in, the synthesized sound plays */
-const CLIPS = {}, CLIP_BASE = ["ak", "m4", "glock", "usp", "deagle", "rifle_ak", "rifle_m4", "pistol_9", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "sniper_3006", "sniper_300"];
+const CLIPS = {}, CLIP_BASE = ["ak", "m4", "glock", "usp", "deagle", "rifle_ak", "rifle_m4", "pistol_9", "pistol_380", "smg_9", "smg_ppsh", "shotgun_nova", "shotgun_cd", "awp", "sniper_300"];
 const CLIP_NAMES = [...CLIP_BASE.flatMap(b => [b + "_near1", b + "_near2", b + "_far1", b + "_far2"]), "mag_out", "mag_in", "slide", "charge", "bolt_back", "bolt_fwd", "click",
   "step1", "step2", "step3", "step4", "step5", "step6", "boom1", "boom2", "boom3", "pop", "knife_slash1", "knife_slash2", "knife_draw"];
 let clipsAsked = false;
@@ -54,24 +54,28 @@ function loadClips() { if (clipsAsked || !AC) return; clipsAsked = true;
   for (const n of CLIP_NAMES) fetch("sounds/" + n + ".mp3").then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => AC.decodeAudioData(b)).then(buf => { CLIPS[n] = buf; }).catch(() => {}); }
 /* which recording each gun uses and at what pitch. The guns we draw have their own (2026-11-23, sounds/SOUNDS.md): the
    real AK pitched down with its chest thump and bark, the real AR-15 lean and cracking for the M4, a 9 mm for the Glock,
-   the same shot muffled to a suppressed thud for the USP-S, a .45 pitched down and heavy for the Deagle. The rest share a
-   recording per class, pitched apart */
+   the same shot muffled to a suppressed thud for the USP-S, a .45 pitched down and heavy for the Deagle; the AWP
+   (2026-11-24) a real bolt-action's whole report, its boom and the range's echo rolling under it, pitched down toward a
+   .338 magnum, and a deeper ring off the street round you (the third number: your own shot's share of the echo, .12 if
+   not given). The rest share a recording per class, pitched apart */
 const GUNCLIP = { usp: ["usp", 1], ak: ["ak", 1], galil: ["rifle_ak", 1.06], sg553: ["rifle_ak", .96], negev: ["rifle_ak", .88], m4: ["m4", 1], famas: ["rifle_m4", 1.07], aug: ["rifle_m4", .95],
   glock: ["glock", 1], p250: ["pistol_9", .94], tec9: ["pistol_9", 1.1], cz75: ["pistol_380", .97], fiveseven: ["pistol_380", 1.08], deagle: ["deagle", 1],
   mp9: ["smg_9", 1.07], mp7: ["smg_9", 1.13], p90: ["smg_9", 1.18], mac10: ["smg_ppsh", 1.05], ump: ["smg_ppsh", .92],
-  nova: ["shotgun_nova", 1], xm1014: ["shotgun_cd", 1.04], awp: ["sniper_3006", .94], ssg08: ["sniper_300", 1.06] };
+  nova: ["shotgun_nova", 1], xm1014: ["shotgun_cd", 1.04], awp: ["awp", 1, .22], ssg08: ["sniper_300", 1.06] };
 function playClip(name, vol, rate = 1, to = dest()) { const b = CLIPS[name]; if (!AC || !b) return false;
   const s = AC.createBufferSource(); s.buffer = b; s.playbackRate.value = rate; const g = AC.createGain(); g.gain.value = vol; s.connect(g).connect(to); s.start(); return true; }
 function gunClip(w, vol, near) { const c = GUNCLIP[w]; if (!c) return false; const k = c[0] + (near ? "_near" : "_far") + (Math.random() < .5 ? 1 : 2);
   const name = CLIPS[k] ? k : c[0] + (near ? "_near" : "_far") + 1;
   if (!playClip(name, vol * (near ? .85 : 1.05), c[1] * (.97 + Math.random() * .06))) return false;
-  if (!SND && VERB) playClip(name, vol * .12, c[1], VERB);   // your own shot rings off the street a little too
+  if (!SND && VERB) playClip(name, vol * (c[2] || .12), c[1], VERB);   // your own shot rings off the street a little too
   if (c[0].startsWith("sniper")) sniperWeight(name, vol, near, c[1]);
   if (w === "usp" && near) playClip("click", vol * .25, 1.15);   // a suppressor leaves the slide audible
   return true; }
-/* the heavy sniper (2026-11-22): the recording alone is a short crack, so it gets a chest punch, its own echo rolling back
+/* the SSG 08's weight (2026-11-22): its recording alone is a short crack, so it gets a chest punch, its own echo rolling back
    from the far walls (the shot itself through a darkening feedback delay, panned side to side) and a long low rumble,
-   about three seconds in all; a far shot is mostly echo and rumble */
+   about three seconds in all; a far shot is mostly echo and rumble. The AWP had it too until 2026-11-24 (operator: "not
+   correct"): its old clip was cut to 0.9 s without its low end, and the made-up layers (a sine sweeping 72 to 30 Hz, the
+   shot repeating in the delay) sounded like a drum machine and an echo pedal; it now plays its own whole recording */
 let RUMBLE = null;
 function sniperWeight(name, vol, near, rate) { if (!AC) return; const t = AC.currentTime, out = AC.createGain(); out.gain.value = vol; out.connect(dest());
   if (near) { const o = AC.createOscillator(), g = AC.createGain(); o.type = "sine"; o.frequency.setValueAtTime(72, t); o.frequency.exponentialRampToValueAtTime(30, t + .35);

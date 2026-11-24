@@ -269,6 +269,48 @@ const UP = new THREE.Vector3(0, 1, 0), DOWN = new THREE.Vector3(0, -1, 0);
 
 /* the two bomb sites (2026-11-14, moved here from server.js 2026-11-23 so tools/check.mjs times the same sites): on the
    defenders' half, as far apart as the half allows, each with open ground around it */
+/* where each side may spawn (2026-11-24, operator: "dont spawn at edge of maps and inside locked too tight places"; on the
+   factory he spawned in a 1.6 m alley at the map's edge with the bots, who filled its one way out). A side is every point
+   clearly nearer its own end of the map (about a third of it); a spawn point of it is open overhead and
+   - SPAWN.edge m or more from the map's edge: the ground ends there (cells with nothing under them, flooded in from
+     outside the map, so a crack in the floor is not an edge)
+   - in room: the narrowest line through it at chest height (16 rays, each way to the first wall) SPAWN.corridor m or more
+   A side with fewer than SPAWN.min such points reaches toward the middle (points nearer its own end than .7, .85, then 1
+   times their distance to the other's), and if still short keeps its SPAWN.min best (by the smaller of the two shares);
+   the map checker warns. The two ends themselves (W.spawn, the far ends of the longest walk) are by their nature the most remote
+   corners: they anchor the sides and are never spawned in. Worked out once per map (W.spawnInfo) */
+export const SPAWN = { edge: 4, corridor: 3, min: 24 };
+export function spawnPoints(W) {
+  if (W.spawnInfo) return W.spawnInfo;
+  const N = W.nodes, b = W.bounds, o = new THREE.Vector3(), CELL = .5;
+  const gx = Math.ceil((b.max.x - b.min.x) / CELL) + 3, gz = Math.ceil((b.max.z - b.min.z) / CELL) + 3, x0 = b.min.x - CELL, z0 = b.min.z - CELL, H = b.max.y - b.min.y + 2;
+  const ground = new Uint8Array(gx * gz), out = new Uint8Array(gx * gz), q = [], at = (i, k) => i * gz + k;
+  for (let i = 0; i < gx; i++) for (let k = 0; k < gz; k++) { o.set(x0 + (i + .5) * CELL, b.max.y + 1, z0 + (k + .5) * CELL); ground[at(i, k)] = W.first(o, DOWN, H) ? 1 : 0; }
+  for (let i = 0; i < gx; i++) for (let k = 0; k < gz; k++) if ((i === 0 || k === 0 || i === gx - 1 || k === gz - 1) && !ground[at(i, k)]) { out[at(i, k)] = 1; q.push([i, k]); }
+  while (q.length) { const [i, k] = q.pop(); for (const [a, c] of [[i + 1, k], [i - 1, k], [i, k + 1], [i, k - 1]]) if (a >= 0 && c >= 0 && a < gx && c < gz && !out[at(a, c)] && !ground[at(a, c)]) { out[at(a, c)] = 1; q.push([a, c]); } }
+  const rim = [];
+  for (let i = 0; i < gx; i++) for (let k = 0; k < gz; k++) if (out[at(i, k)] && [[i + 1, k], [i - 1, k], [i, k + 1], [i, k - 1]].some(([a, c]) => a >= 0 && c >= 0 && a < gx && c < gz && !out[at(a, c)])) rim.push(x0 + (i + .5) * CELL, z0 + (k + .5) * CELL);
+  if (!rim.length) {   // ground to the very bounds: the bounds are the edge
+    for (let i = 0; i < gx; i++) rim.push(x0 + (i + .5) * CELL, z0, x0 + (i + .5) * CELL, z0 + gz * CELL);
+    for (let k = 0; k < gz; k++) rim.push(x0, z0 + (k + .5) * CELL, x0 + gx * CELL, z0 + (k + .5) * CELL); }
+  const D16 = [...Array(16)].map((_, k) => new THREE.Vector3(Math.cos(k * Math.PI / 8), 0, Math.sin(k * Math.PI / 8)));
+  const edge = new Float32Array(N.length), room = new Float32Array(N.length), open = new Uint8Array(N.length);
+  for (const n of N) {
+    let d = Infinity; for (let r = 0; r < rim.length; r += 2) { const e = (rim[r] - n.p.x) ** 2 + (rim[r + 1] - n.p.z) ** 2; if (e < d) d = e; } edge[n.i] = Math.sqrt(d);
+    o.copy(n.p); o.y += 1; const f = D16.map(v => { const h = W.first(o, v, 12); return h ? h.distance : 12; });
+    let c = Infinity; for (let k = 0; k < 8; k++) c = Math.min(c, f[k] + f[k + 8]); room[n.i] = c;
+    o.copy(n.p); o.y += 1.6; open[n.i] = W.first(o, UP, 2.5) ? 0 : 1;   // a ceiling within 2.5 m over the eyes: a house interior or a nook
+  }
+  const score = i => Math.min(1, edge[i] / SPAWN.edge, room[i] / SPAWN.corridor);
+  const dA = W.dijkstra(W.spawn[0][0] ?? 0), dB = W.dijkstra(W.spawn[1][0] ?? 0), good = [0, 0];
+  const side = [0, 1].map(t => { let mine = [], ok = [];
+    for (const k of [.55, .7, .85, 1]) {   // a side short of good points reaches further toward the middle, still on its own half
+      mine = N.filter(n => open[n.i] && (t ? dB[n.i] < dA[n.i] * k : dA[n.i] < dB[n.i] * k)).map(n => n.i); ok = mine.filter(i => score(i) >= 1);
+      if (ok.length >= SPAWN.min) break; }
+    good[t] = ok.length; if (ok.length >= SPAWN.min) return ok;
+    return mine.sort((a, c) => score(c) - score(a) || room[c] - room[a]).slice(0, SPAWN.min); });
+  return (W.spawnInfo = { side, good, edge, room, ok: N.map(n => !!open[n.i] && score(n.i) >= 1) });
+}
 export function bombSites(W) {
   const n = W.nodes; if (!n.length) return [];
   const dC = W.dijkstra(W.spawn[0][0] ?? 0), dT = W.dijkstra(W.spawn[1][0] ?? 0), span = W.span || 1;
@@ -357,7 +399,7 @@ export function move(w, s, cmd, dt = DT) {
   const was = s.onGround, prev = s.pos.clone(), vy0 = s.vel.y;
   if (was && groundMove(w, s, dt)) { if (s.stamina > 0) s.stamina = Math.max(0, s.stamina - STAMINA.rec * dt); return; }
   s.pos.addScaledVector(s.vel, dt);
-  { const o = s.pos.clone(); o.y += .5; if (!w.first(o, DOWN, 6.5)) { s.pos.x = prev.x; s.pos.z = prev.z; s.vel.x = s.vel.z = 0; } }
+  if (overVoid(w, s.pos)) { s.pos.x = prev.x; s.pos.z = prev.z; s.vel.x = s.vel.z = 0; }
   const delta = w.collide(s.pos, C.radius, height(s));
   s.onGround = delta.y > Math.abs(dt * s.vel.y * .25) && delta.y > 0;
   const off = Math.max(0, delta.length() - 1e-5); if (off > 0) { const n = delta.clone().normalize(); s.pos.addScaledVector(n, off); const vn = s.vel.dot(n); if (vn < 0) s.vel.addScaledVector(n, -vn); }
@@ -379,7 +421,15 @@ export function move(w, s, cmd, dt = DT) {
    step, squeezed by a roof or a steep face, it is left to the plain move above (which falls, slides or stops) */
 export const STEP = 18 * U;
 const SUP = [[0, 0], ...[...Array(8)].map((_, k) => [Math.cos(k * Math.PI / 4) * C.radius * .95, Math.sin(k * Math.PI / 4) * C.radius * .95])];
-const _gq = new THREE.Vector3(), _go = new THREE.Vector3();
+const _gq = new THREE.Vector3(), _go = new THREE.Vector3(), _vo = new THREE.Vector3();
+/* off the world: no floor within 6.5 m under any point of the body's disc. A jump or a fall over that stops where it was,
+   as at a wall, so nobody leaves the map. Until 2026-11-24 the air move looked under the centre alone, and a generated
+   floor's cracks swallowed that one ray, and a running jump over one stopped dead in mid-air (operator: "jump doesn't move
+   forward"). The centre answers first, so a jump over solid floor costs one ray */
+export function overVoid(w, p) {
+  for (const [dx, dz] of SUP) { _vo.set(p.x + dx, p.y + .5, p.z + dz); if (w.first(_vo, DOWN, 6.5)) return false; }
+  return true;
+}
 /* the highest walkable floor under a disc at q, from just above q down `down`; null if none */
 export function support(w, q, down) {
   let best = null;
