@@ -434,6 +434,31 @@ function prepFighter(scene, team, n) {
   mat.userData.shared = true;
   return { n, scene, mat, s: HEIGHT / h, y: -bb.min.y * HEIGHT / h };
 }
+/* the team's rim light (2026-11-24, operator): a fine edge of the team's colour round every fighter, strongest where the
+   body turns away from the eye, so a player reads against any wall (vischeck: Ember's desert camo melted into the
+   factory, snow village and market). It is drawn inside the body's own material (no extra draw call), so walls and smoke
+   cover it as they cover the body, and game.js puts it out as a fighter dies: a lit outline always means someone alive.
+   Each fighter gets its own copy of its body's material (same program, same textures) so its light can fade alone */
+/* the menu's team swatches; gain 2.5 and power 4 keep it a thin edge (A/B on factory, market and snow village: a softer,
+   wider one tinted the whole body). It lifts a fighter off a dark or same-coloured wall; against a bright sky it lightens a
+   dark fighter a little, who stands out there anyway */
+export const RIM = { colour: [new THREE.Color(0x4f86d9), new THREE.Color(0xe0a14a)], gain: { value: 2.5 }, power: { value: 4 } };
+const RIMU = new WeakMap();
+function rimShader(sh) {   // one named function for every copy: the same text keeps them on one compiled program
+  const u = RIMU.get(this); sh.uniforms.rimK = u.k; sh.uniforms.rimC = u.c; sh.uniforms.rimG = RIM.gain; sh.uniforms.rimP = RIM.power;
+  sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float rimK, rimG, rimP;\nuniform vec3 rimC;")
+    // the smooth surface's normal, not the normal map's: the bumps of the cloth would light up all over the body
+    .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += rimC * ( rimK * rimG * pow( 1.0 - saturate( dot( nonPerturbedNormal, normalize( vViewPosition ) ) ), rimP ) );");
+}
+function rimmed(root, team) {   // returns the fighter's light switch, 0..1
+  const u = { k: { value: 1 }, c: { value: RIM.colour[team ? 1 : 0] } }, made = new Map();
+  root.traverse(o => { if (!o.isMesh || !o.material || !o.material.isMeshStandardMaterial) return;
+    let m = made.get(o.material);
+    if (!m) { const src = o.material; m = src.clone(); m.userData = {}; m.onBeforeCompile = rimShader; RIMU.set(m, u); made.set(src, m);
+      if (src.map) src.map.userData.shared = true; }   // the copy goes when its fighter goes, the body's texture stays
+    o.material = m; });
+  const set = v => { u.k.value = v; }; set.u = u.k; return set;
+}
 export const CR = { drop: .45, thigh: 1.15, shin: 2.2, lean: 0 };   // the fighter crouch, tuned against the hit boxes
 const AIR = { thigh: .55, shin: 1.1 };   // the jump tuck: sim.js AIR, which the leg hit boxes use, keep both the same
 const sm = x => x * x * (3 - 2 * x), seg = (p, a, b) => sm(Math.min(1, Math.max(0, (p - a) / (b - a))));
@@ -441,6 +466,7 @@ function fighter(team, F) {
   const root = new THREE.Group(), fit = new THREE.Group(), body = cloneSkinned(F.scene); fit.add(body); root.add(fit);
   fit.rotation.y = Math.PI; fit.scale.setScalar(F.s); fit.position.y = F.y;   // the files face +Z; the game's forward is -Z
   body.traverse(o => { if (o.isMesh) { o.material = F.mat; o.castShadow = true; o.frustumCulled = false; } });
+  const rim = rimmed(body, team);   // the body only: the gun in its hands stays as it is
   const bones = {}; body.traverse(o => { if (o.isBone) bones[o.name] = o; });
   root.updateMatrixWorld(true);
   // each bone's rest: its own turn, and its turn in the body's frame, so a turn about the body's axes can be applied to it
@@ -467,7 +493,7 @@ function fighter(team, F) {
   }
   const POLE_R = new THREE.Vector3(.6, -1, .3), POLE_L = new THREE.Vector3(-.8, -1, .1), tR = new THREE.Vector3(), tL = new THREE.Vector3();
   return {
-    root, head: bones.head,
+    root, head: bones.head, rim,
     setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); mount.userData.w = w; },
     /* o.move: the walk's direction from the facing (radians, 0 ahead), o.dead: 0..1 into the fall, o.air: 0..1 off the
        ground, o.land: 1..0 just after landing, o.act: { k: reload | cock | throw | plant | defuse, p: 0..1 through it } */
@@ -581,9 +607,9 @@ function codeSoldier(team) {
   };
   const legR = leg(1), legL = leg(-1);
   const mount = new THREE.Group(); mount.position.set(.1, .32, -.22); spine.add(mount);
-  let held = null;
+  let held = null; const rim = rimmed(root, team);   // the mount is still empty here: the gun is left out
   return {
-    root, head,
+    root, head, rim,
     setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); },
     /* speed in m/s, phase grows with distance walked, duck 0..1, pitch in radians */
     pose(speed, phase, duck, pitch) {

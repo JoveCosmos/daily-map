@@ -30,7 +30,7 @@ await sleep(15000);   // the generated fighters load after the page and take the
 const r = await ev(`(async () => {
   const { scene, camera, renderer } = await import("/client/core.js"), THREE = await import("three");
   const g = window.__g, W = g.W(), gl = renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
-  const fighters = [...g.others.values()].filter(o => o.alive !== false && !o.gone && o.model && o.model.g);
+  const fighters = [...g.others.values()].filter(o => o.alive && !o.gone && o.model && o.model.g);
   const black = new THREE.MeshBasicMaterial({ color: 0x000000 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff }), views = [], skipped = [], shots = [];
   const read = () => { const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
   const kids = camera.children.map(c => [c, c.visible]); kids.forEach(([c]) => c.visible = false);

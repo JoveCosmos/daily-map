@@ -8,7 +8,7 @@ import { gunModel, soldier, MUZZLE, sleeveMaterial, applyFinish, FINISHES, loadG
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { gltf, $, params, AUTO, TEAM, TEAMCOL, renderer, PHONE, scene, camera, sun, TOUCH, nowS, pointerLock } from "./client/core.js";
 import { dryFire, MG, audio, AC, OUT, at, tink, dest, CLIPS, playClip, deathSound, muffle, gunSound, SUBSONIC, whiz, crack, impactSound, swish, reloadSound, pinSound, bodyHit, headDink, dmgNum, clack, probeEnv, tickDmg, ENV } from "./client/audio.js";
-import { dotTex, tracer, flashAt, puff, parts, decal, sparks, ejectShell, muzzleLight, tickParts, tickShells, flyStreaks, tracers, streaks, sparkN, shells, decals } from "./client/fx.js";
+import { dotTex, tracer, flashAt, puff, parts, decal, sparks, impact, ejectOther, ejectShell, muzzleLight, tickParts, tickShells, flyStreaks, tracers, streaks, sparkN, shells, decals } from "./client/fx.js";
 import { buyMenu, BUY, buyKey, onTap, beep, SITES_C, bombObj, setLineups, setSites, TMO, syncComp, itemName, drawBuy, tickComp, tickLineups, LU } from "./client/comp.js";
 import { radarMap, drawRadar } from "./client/radar.js";
 import { openChat, radioMenu, CHAT, sendRadio, sendPing, onTalk, chatLine, tickTalk, PINGS } from "./client/talk.js";
@@ -303,7 +303,8 @@ async function onWelcome(m) {
   setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ t: "p", n: nowS() })), 1000);
 }
 function hpCell(x) {
-  const o = others.get(x.id), alive = x.id === myId ? me.alive : o ? o.alive !== false : true, hp = x.id === myId ? me.hp : o ? o.hp : null;
+  // others' alive is the snapshot's 0/1 (it was tested against false, so the board never showed anyone else dead)
+  const o = others.get(x.id), alive = x.id === myId ? me.alive : o && o.alive != null ? !!o.alive : true, hp = x.id === myId ? me.hp : o ? o.hp : null;
   if (!alive) return '<small>dead</small>';
   return x.team === myTeam ? (hp ?? 100) : '<small>alive</small>';
 }
@@ -367,8 +368,11 @@ const LIFE = { given: new Map(), taken: new Map() };
 function onEvent(e) {
   if (e.k === "hit" && (e.by === myId) !== (e.id === myId)) { const b = e.by === myId ? LIFE.given : LIFE.taken, who = e.by === myId ? e.id : e.by, r = b.get(who) || { d: 0, n: 0 }; r.d += e.d; r.n++; b.set(who, r); }
   if (e.k === "spawn" && e.id === myId) { LIFE.given.clear(); LIFE.taken.clear(); }
-  if (e.k === "shot" && e.id !== myId) { const a = new THREE.Vector3(...e.f), b = new THREE.Vector3(...e.t); const aw = WIDS[e.g] === "awp"; tracer(a.clone().lerp(b, .02), b, aw); at(a, () => gunSound(WIDS[e.g], clamp(1 - a.distanceTo(camera.position) / (aw ? 120 : 60), aw ? .25 : .08, .8), a.distanceTo(camera.position) < 18)); if (aw && a.distanceTo(camera.position) < 25) shake = Math.max(shake, .25);
-    flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b))))); if (e.w) puff(b, 0xb8a888, 6, .1);
+  if (e.k === "shot" && e.id !== myId) { const a = new THREE.Vector3(...e.f), b = new THREE.Vector3(...e.t); const aw = WIDS[e.g] === "awp"; tracer(a.clone().lerp(b, .02), b, WIDS[e.g]); at(a, () => gunSound(WIDS[e.g], clamp(1 - a.distanceTo(camera.position) / (aw ? 120 : 60), aw ? .25 : .08, .8), a.distanceTo(camera.position) < 18)); if (aw && a.distanceTo(camera.position) < 25) shake = Math.max(shake, .25);
+    flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b)))));
+    // their bullet holes and sparks by calibre (2026-11-24: a puff alone before), and their gun throws its case
+    if (e.w) { const dv = b.clone().sub(a), L = dv.length(); dv.divideScalar(L || 1); const h = b.distanceTo(camera.position) < 40 && W.first(a, dv, L + .5); if (h) impact(h, dv, WIDS[e.g]); else puff(b, 0xb8a888, 6, .1); }
+    { const sh = others.get(e.id), last = sh && sh.buf[sh.buf.length - 1]; if (sh && sh.model.g.visible) ejectOther(e.id, WIDS[e.g], a, b, last ? new THREE.Vector3(last.vx, 0, last.vz) : null); }
     if (me.alive) { const ab = b.clone().sub(a), L = ab.length(); if (L > 1) { ab.divideScalar(L); const c = camera.position, tt = clamp(c.clone().sub(a).dot(ab), 0, L), pc = a.clone().addScaledVector(ab, tt), miss = pc.distanceTo(c);
       if (tt > .5 && tt < L - .3 && miss < 2.5) { const v = clamp(1 - miss / 2.5, .15, 1); at(pc, () => (SUBSONIC.has(WIDS[e.g]) ? whiz : crack)(v)); } } }   // it passed you
     if (e.w && b.distanceTo(camera.position) < 14) at(b, () => impactSound(clamp(1 - b.distanceTo(camera.position) / 14, .1, 1))); }
@@ -431,8 +435,8 @@ function tickInput() {
   else if (s && s.melee) { swish(1); swing = 1; lastFire = performance.now(); }
   else if (s) {   // the predicted shot: tracer, decal and sound now; the damage is the server's to decide
     const o = new THREE.Vector3(me.pos.x, me.pos.y + eye(me), me.pos.z), aw = me.w === "awp";
-    for (const d of s.dirs || [s.dir]) { const h = W.first(o, d, 300); tracer(gunTip(), o.clone().addScaledVector(d, h ? h.distance : 300), aw); if (h) { decal(h, d); puff(h.point, 0xb8a888, aw ? 14 : 6, aw ? .18 : .1); const nrm = h.face.normal.clone(); if (nrm.dot(d) > 0) nrm.negate(); sparks(h.point, nrm, aw ? 10 : 5); } } gunSound(me.w, 1);
-    if (!(WEAPONS[me.w] || {}).shell && me.w !== "zeus") ejectShell(); if (muzzleLight) { muzzleLight.position.copy(gunTip()); muzzleLight.intensity = aw ? 60 : 30; } { const F = WEAPONS[me.w] || {}; flash = F.fl ?? .045; kick = F.vk ?? 1; KICKW = F; } if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
+    for (const d of s.dirs || [s.dir]) { const h = W.first(o, d, 300); tracer(gunTip(), o.clone().addScaledVector(d, h ? h.distance : 300), me.w); if (h) impact(h, d, me.w); } gunSound(me.w, 1);
+    ejectShell(me.w); if (muzzleLight) { muzzleLight.position.copy(gunTip()); muzzleLight.intensity = aw ? 60 : 30; } { const F = WEAPONS[me.w] || {}; flash = F.fl ?? .045; kick = F.vk ?? 1; KICKW = F; } if (aw) { shake = 1; fovPunch = 1; $("hurt").style.transition = "none"; $("hurt").style.boxShadow = "inset 0 0 160px rgba(255,236,200,.35)"; setTimeout(() => { $("hurt").style.transition = "box-shadow .3s"; if (me.alive) $("hurt").style.boxShadow = ""; }, 60); } lastFire = performance.now();
   }
   pending.push(cmd); outbox.push(cmd); if (pending.length > 256) pending.shift();
 }
@@ -509,7 +513,7 @@ function drawOthers() {
     // the walk's direction from the facing, for the legs; a death plays over 0.8 s: the knees fold, then the body tips over
     // backwards with a little twist of its own (by id), falling faster as it goes, as a body does
     const fy = g.rotation.y, mvA = speed > .3 ? Math.atan2(s1.vx * Math.cos(fy) - s1.vz * Math.sin(fy), -s1.vx * Math.sin(fy) - s1.vz * Math.cos(fy)) : 0;
-    if (!s1.alive) { if (o.model.diedT == null) o.model.diedT = o.alive === false ? -9 : nowS(); } else o.model.diedT = null;
+    if (!s1.alive) { if (o.model.diedT == null) o.model.diedT = o.alive != null && !o.alive ? -9 : nowS(); } else o.model.diedT = null;   // dead already in the frame before (a body just swapped by reskin): lying, no second fall
     const dd = o.model.diedT == null ? 0 : clamp((nowS() - o.model.diedT) / .8, 0, 1), tip = clamp((dd - .3) / .7, 0, 1) ** 2;
     // the stride is the server's (2026-11-22): its walk phase, so the legs are drawn where the leg hit boxes are
     const gd = s1.ga != null && s0.ga != null ? Math.atan2(Math.sin(s1.ga - s0.ga), Math.cos(s1.ga - s0.ga)) : 0, gph = s1.ga != null ? (s0.ga ?? s1.ga) + gd * k : o.model.phase;
@@ -518,6 +522,7 @@ function drawOthers() {
     if (o.model.air > .5 && air <= .5) { o.model.landT = nowS(); ACTN.land = (ACTN.land || 0) + 1; if (s1.alive) at(o.model.g.position, () => step(Math.min(1, stepVol(o.model.g.position) * 1.4), true)); }   // their landing is heard, as in CS (audit 2026-11-23; it was silent)
     o.model.air = air; const land = o.model.landT ? Math.max(0, 1 - (nowS() - o.model.landT) / .25) : 0;
     o.model.sd.pose(s1.alive ? speed : 0, gph, duck, s1.alive ? pitch : 0, { move: mvA, dead: dd, air, land: Math.sin(land * Math.PI), act: actNow(o, s1, speed) });
+    if (o.model.sd.rim) o.model.sd.rim(1 - Math.min(1, dd * 2));   // the team's rim light goes out as they fall (models.js RIM)
     if (!s1.alive) { g.rotation.x = -Math.PI / 2 * .94 * tip; g.rotation.z = ((o.id * 37) % 7 - 3) * .06 * tip; g.position.y = y + .12 * tip; o.model.tag.visible = false; } else { g.rotation.x = 0; g.rotation.z = 0; o.model.tag.visible = !o.model.tag.userData.enemy || o === aimedAt; }
     o.alive = s1.alive;
   }
@@ -767,6 +772,6 @@ let rejoining = false;
   if (rj && Date.now() - rj.t < 30000) { if (rj.map) getMap(rj.map);   /* the map this room needs, before today's takes the one slot (2026-11-17) */ team = rj.team || "auto"; room = rj.room; rejoined = rj.lost ? "lost" : "map"; rejoining = true; start({ room, quiet: 1 }); } }
 if (room !== "DAILY" && !AUTO && !rejoining) { $("code").value = room; openJoin(room); }   // an invite link opens its join popup
 if (AUTO) { $("start").style.display = "none"; team = params.get("team") || "auto"; start(params.get("create") ? { create: "1", mode: params.get("mode") || "dm", frz: params.get("frz") || "", diff: params.get("diff") || "normal", bots: params.get("bots") || "1", bpt: params.get("bpt") || "", title: "test" } : { room }); }
-if (AUTO || DEBUG) window.__g = { cam: () => +camera.position.y.toFixed(3), lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), acts: () => ACTN, tracer, streaks, corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, streaks: streaks.length, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
+if (AUTO || DEBUG) window.__g = { cam: () => +camera.position.y.toFixed(3), rim: () => [...others.values()].map(o => ({ team: o.team, alive: o.alive, k: o.model.sd.rim ? +o.model.sd.rim.u.value.toFixed(2) : null, mats: (() => { let n = 0, r = 0; o.model.g.traverse(x => { if (x.isMesh && x.material) { n++; if (x.material.onBeforeCompile && x.material.onBeforeCompile.name === "rimShader") r++; } }); return [r, n]; })() })),lu: () => ({ n: LU.list.length, shown: LU.marks.filter(m => m.visible).length, w: me.w, team: myTeam }), kc: () => ({ hls: KC.hls, hl: KC.hl && KC.hl.title, msgs: KC.msgs, deaths: KC.deaths, played: KC.played, fps: +fpsNow.toFixed(1), on: KC.on, rec: !!KC.rec, n: KC.rec ? KC.rec.h.size : 0, temps: KC.temps.size }), acts: () => ACTN, tracer, streaks, corr: (reset) => { const v = corrMax; if (reset) corrMax = 0; return v; }, spec: () => ({ id: SPEC.id, n: specList().length, on: spectating(), mode: GM && GM.m, since: +(nowS() - diedAt).toFixed(1), team: myTeam, mates: [...others.values()].map(o => [o.id, o.team, o.alive, !!o.gone, o.buf.length]) }), ws: () => ws, snaps: () => snapN, snd: { crack, whiz, impactSound, bodyHit, reloadSound, boomSound, flashSound, step, gunSound, audio, ctx: () => AC && AC.state }, fx: () => ({ roomy: +ENV.roomy.toFixed(2), clips: Object.keys(CLIPS).length, sparks: sparkN, streaks: streaks.length, shells: shells.length, parts: parts.length, decals: decals.length, light: muzzleLight ? +muzzleLight.intensity.toFixed(1) : null }), start,me, others, roster, keys, pending: () => pending, ping: () => ping, setMouse: v => { mouseDown = v; }, connected: () => connected, W: () => W, myId: () => myId, smooth, viewTime };
 requestAnimationFrame(frame);
 export { DECOYDOTS, DRAWK, FX, GM, GUNPOS, KC, PINGS, SET, SPEC, SPOTTED, W, compLike, connected, diedAt, dispose, dmLike, esc, keys, label, lerpAng, locked, me, myId, myTeam, nameOf, noiseHit, others, person, recoilFx, releaseMouse, reskin, roster, setLocked, ws };   // for client/*.js

@@ -47,8 +47,13 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   MODELS.md): it is painted in the game's own materials and fitted to the code-built gun's box (muzzle, top, centre),
   so hands, flash and tracers need no change, and `?codeguns` shows the old one. Weapon finishes repaint a gun's body
   materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
-  client/viewmodel.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. **`index.html`** holds the page, the
-  menu and all CSS.
+  client/viewmodel.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. Every fighter's body gets
+  a thin edge of its team's colour (`RIM`, `rimmed`): a copy of the body material per fighter on one shared shader, built
+  on the smooth normal (the cloth's normal maps lit the whole body), switched by `sd.rim(0..1)`, which goes out as the
+  fighter falls, so a lit outline always means someone alive. **`index.html`** holds the page, the menu and all CSS.
+- **Bullets by calibre** (client/fx.js): `CAL` gives each gun its round, and the round sets the spent case (`CASES`,
+  one instanced mesh a kind, 16 on phones, 40 on desktop), the tracer (`TRACE`) and the hole, dust and sparks (`HIT`).
+  Bolt and pump guns throw their case when the bolt comes back (`CYCLE`), the rest at the shot.
 - **The map switch is for testing.** With `MAP_SKIP=1` an arrow by the menu's "Next:" moves the public room on now
   (`/skipmap`). It is off by default: anyone could empty the public room with it every 5 seconds.
 - **One way into a game.** The menu shows a card per mode (`#mgrid`); a card opens the setup popup (`#msetup`, `msOpen`)
@@ -135,6 +140,8 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   old room. Clear `sessionStorage` between test pages.
 - **`?autoplay` never shows the phone's touch layer** (it only runs while playing for real), so taps there do nothing in
   that mode. Test phones by tapping through the menu like a player.
+- **Other players' `alive` is 0 or 1.** It arrives in the snapshot as a number: test it as `o.alive` (truthy), never
+  `=== false` or `!== false`, which read everyone as alive (the scoreboard never showed anyone else dead).
 - **A message's `t` is its type.** A field called `t` in the same object overwrites it and the client drops the message
   (the challenge result did this once).
 - **A phone panel fades the controls.** While scores, radio, buy, a vote or chat is open, or the player is dead, the body

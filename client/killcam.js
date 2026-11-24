@@ -42,7 +42,7 @@ function kcBodies(t) {
     let m = id !== myId && others.get(id) ? others.get(id).model : null;
     if (!m) { m = KC.temps.get(id); if (!m) { m = person(r.team, nameOf(id)); KC.temps.set(id, m); } }
     const S = kcAt(r.rows, t), g = m.g; g.visible = true; g.position.set(S.x, S.y, S.z); g.rotation.y = S.yaw;
-    m.phase = (m.phase || 0) + S.speed * .016 * 3.2; m.sd.pose(S.alive ? S.speed : 0, m.phase, S.duck, S.alive ? S.pitch : 0);
+    m.phase = (m.phase || 0) + S.speed * .016 * 3.2; m.sd.pose(S.alive ? S.speed : 0, m.phase, S.duck, S.alive ? S.pitch : 0); if (m.sd.rim) m.sd.rim(S.alive ? 1 : 0);
     g.rotation.x = S.alive ? 0 : -Math.PI / 2; if (m.tag) m.tag.visible = !S.alive ? false : r.team === myTeam; }
 }
 const specList = () => [...others.values()].filter(o => o.team === myTeam && o.alive && !o.gone && o.buf.length).sort((a, b) => a.id - b.id);
