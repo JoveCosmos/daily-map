@@ -46,20 +46,28 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   tell them apart (`VARIANT`). A few guns use a public-domain model instead (`IMPORTED`, files in `models/`, credits in
   MODELS.md): it is painted in the game's own materials and fitted to the code-built gun's box (muzzle, top, centre),
   so hands, flash and tracers need no change, and `?codeguns` shows the old one. Weapon finishes repaint a gun's body
-  materials (`applyFinish`). The first-person arms (rebuilt 2026-11-24) are one rig for every arms file (upper arm,
+  materials (`applyFinish`); a gun with its own texture gets a finish copy of its material instead (`hyFinish`,
+  `finShader`: the pattern projected from the gun's three sides in metres, the texture's light and dark kept, wood and
+  brass left as they are; three.js drops `onBeforeCompile` when a material is copied, so a copy must set it again). The first-person arms (rebuilt 2026-11-24) are one rig for every arms file (upper arm,
   forearm, a twist bone half way and one at the wrist, hand, fingers; `models/arms-cc0.glb` here), posed in code every
   frame: `makeArms` in models.js places and turns each hand exactly, works the shoulder back from the hand so the wrist
   keeps a natural bend, picks the elbow round the reach circle and spreads the hand's turn over the twist bones; the
   sleeve does not turn with the forearm, the glove and its strap do. Where the hands go is client/hands.js: each gun's
   grip line, trigger, handguard and magazine measured off its own mesh by rays (`measure`, once per gun in idle time),
   fingers closed joint by joint until they meet the gun (`closeFingers`), reloads moving the support hand by the gun's
-  parts at the reload sounds (`RELOAD`), the arms scaled by what is held (`MOUNT`). Every fighter's body gets
+  parts at the reload sounds (`RELOAD`), the arms scaled by what is held (`MOUNT`). A pistol is held thumbs forward
+  (`HAND.sup`): the support hand closes on the shooting hand's fingers as well as the grip (`fingerCaps`, `avoid`), and
+  goes down a few millimetres where the trigger guard is in its index's way (a finger that touches before it bends stays
+  straight). Other players' hands take their wrists' places from the same measured grip and handguard (`thirdGrips`,
+  `setGrips`; the fighters' hands are not turned, they have no fingers). Every fighter's body gets
   a thin edge of its team's colour (`RIM`, `rimmed`): a copy of the body material per fighter on one shared shader, built
   on the smooth normal (the cloth's normal maps lit the whole body), switched by `sd.rim(0..1)`, which goes out as the
   fighter falls, so a lit outline always means someone alive. **`index.html`** holds the page, the menu and all CSS.
 - **Bullets by calibre** (client/fx.js): `CAL` gives each gun its round, and the round sets the spent case (`CASES`,
   one instanced mesh a kind, 16 on phones, 40 on desktop), the tracer (`TRACE`) and the hole, dust and sparks (`HIT`).
-  Bolt and pump guns throw their case when the bolt comes back (`CYCLE`), the rest at the shot.
+  Bolt and pump guns throw their case when the bolt comes back (`CYCLE`), the rest at the shot. The case leaves the gun's
+  own ejection port, measured off its mesh with the grip (`ejectPort`, `portOf`), wherever that gun is that moment: the
+  one in your hands, or the one in the shooter's (`gun()` on a fighter).
 - **The map switch is for testing.** With `MAP_SKIP=1` an arrow by the menu's "Next:" moves the public room on now
   (`/skipmap`). It is off by default: anyone could empty the public room with it every 5 seconds.
 - **One way into a game.** The menu shows a card per mode (`#mgrid`); a card opens the setup popup (`#msetup`, `msOpen`)
@@ -182,7 +190,7 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   recovery, tagging, falloff, wallbangs, bursts, the Zeus, landing and bunny hops; a held spray and the rate of fire
   through `weapon()` tick by tick; steps, ramps, rough floors, ledges, the counter-strafe) and that prediction replays
   exactly. No server needed.
-- The first-person hands: `tools/handlab.mjs [game dir] [out dir] [guns]` poses the arms on each gun as the game does and
+- The first-person hands: `node --experimental-websocket tools/handlab.mjs [game dir] [out dir] [guns]` poses the arms on each gun as the game does and
   saves six views at rest plus an eye-view strip of the draw, the reload and the inspect, with each wrist's bend in
   degrees; exit 1 on a page error or a wrist bent past a body's range.
 - A map: `tools/check.mjs <id>` (its play tests need this `sim.js`; `SIM=<path>` checks against another build),

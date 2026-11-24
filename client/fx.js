@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { scene, camera, TOUCH } from "./core.js";
 import { AC, at, dest } from "./audio.js";
 import { W, GUNPOS, me } from "../game.js";
+import { VIEW } from "./viewmodel.js";
+import { portOf } from "./hands.js";
 /* ── effects ─────────────────────────────────────────────────────────────────── */
 const tracers = [], decals = [];
 /* a bullet hole (2026-11-16): a dark scorched core in a rough ring of chipped surface, drawn once, not a flat disc */
@@ -89,16 +91,20 @@ function addCase(k, p, v, own) { if (shells.length >= CASEMAX) { const i = shell
   const ground = W.first(p, new THREE.Vector3(0, -1, 0), 4);
   shells.push({ k, own, p: p.clone(), v, r: new THREE.Euler(Math.random() * 3, Math.random() * 3, 0), spin: new THREE.Vector3(Math.random() * 20, Math.random() * 20, Math.random() * 20),
     floor: ground ? ground.point.y + CASES[k].r : p.y - 1.6, bounced: false, rest: false, age: 0 }); }
-/* yours: out of the port on the right of the gun in your hands, with your own speed added */
+/* yours: out of the gun's own ejection port (measured off its mesh, client/hands.js portOf; followed through recoil and sway as
+   the gun moves), with your own speed added; one spot for every pistol and one for every long gun until it is measured */
 function ejectShell(w = me.w) { const k = CAL[w]; if (!W || !k) return;
   const go = () => { if (me.w !== w || !me.alive) return;   // switched away before the bolt or pump: no case (CS chambers the round on the draw)
-    const s = CASES[k].v || 1, p = camera.localToWorld(GUNPOS.clone().add(new THREE.Vector3(.025, .045, PISTOL.has(w) ? -.1 : -.16))), r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    const vm = VIEW[w], pt = portOf(w), s = CASES[k].v || 1, r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    const p = vm && vm.visible && pt ? vm.localToWorld(pt.clone()) : camera.localToWorld(GUNPOS.clone().add(new THREE.Vector3(.025, .045, PISTOL.has(w) ? -.1 : -.16)));
     addCase(k, p, r.multiplyScalar((1.4 + Math.random() * .6) * s).addScaledVector(u, (1.2 + Math.random() * .5) * s).add(new THREE.Vector3(me.vel.x, 0, me.vel.z)), true); };
   if (CYCLE[w]) setTimeout(go, CYCLE[w] * 1000); else go(); }
-/* someone else's: from their gun, below and right of the eye the shot left from; a shotgun's pellets throw one hull */
+/* someone else's: from their gun's port (the same point on the gun in their hands, g), else below and right of the eye the
+   shot left from; a shotgun's pellets throw one hull */
 const lastCase = new Map();
-function ejectOther(id, w, a, b, vel) { const k = CAL[w], now = performance.now(); if (!W || !k || a.distanceTo(camera.position) > 25 || now - (lastCase.get(id) || 0) < 40) return; lastCase.set(id, now);
-  const go = () => { const d = b.clone().sub(a).setY(0).normalize(), right = new THREE.Vector3(-d.z, 0, d.x), s = CASES[k].v || 1, p = a.clone().addScaledVector(d, .3).addScaledVector(right, .1); p.y -= .2;
+function ejectOther(id, w, a, b, vel, g) { const k = CAL[w], now = performance.now(); if (!W || !k || a.distanceTo(camera.position) > 25 || now - (lastCase.get(id) || 0) < 40) return; lastCase.set(id, now);
+  const go = () => { const d = b.clone().sub(a).setY(0).normalize(), right = new THREE.Vector3(-d.z, 0, d.x), s = CASES[k].v || 1, pt = portOf(w);
+    let p; if (g && g.parent && pt) p = g.localToWorld(pt.clone()); else { p = a.clone().addScaledVector(d, .3).addScaledVector(right, .1); p.y -= .2; }
     addCase(k, p, right.multiplyScalar((1.4 + Math.random() * .6) * s).add(new THREE.Vector3(0, (1.2 + Math.random() * .5) * s, 0)).add(vel || new THREE.Vector3()), false); };
   if (CYCLE[w]) setTimeout(go, CYCLE[w] * 1000); else go(); }
 const _cm = new THREE.Matrix4(), _cq = new THREE.Quaternion(), _c1 = new THREE.Vector3(1, 1, 1), _cn = {}, _cu = new THREE.Vector3(), _cd = new THREE.Vector3(0, -1, 0);

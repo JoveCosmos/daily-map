@@ -69,8 +69,51 @@ const REPAINT = new Set(["gunmetal", "black", "olive"]);
 export function applyFinish(g, name) {
   const m = finishMats(name); if (!m) return g;
   const mats = new Set([...REPAINT].map(k => MAT[k]));
-  g.traverse(o => { if (o.isMesh && mats.has(o.material)) o.material = m; });
+  g.updateMatrixWorld(true);
+  g.traverse(o => { if (!o.isMesh) return; if (mats.has(o.material)) o.material = m; else if (o.material.userData.hy) o.material = hyFinish(o, name, m); });
   return g;
+}
+/* finishes on the generated guns (2026-11-24; they kept their own texture whatever the finish): a copy of the gun's own
+   material keeps its texture's light and dark (wear, edges, shading) and lays the finish over it, its pattern projected
+   from the gun's three sides in metres (one repeat a metre, as on the code guns), so it runs across the texture's seams;
+   the texture's light and dark are softened (a power of .6, held to .4-1.4 of the finish's colour: a bright part such
+   as the AWP's olive stock came out half again as bright as the rest).
+   Wood, bakelite and brass (warm, strong colours) keep theirs, as on the code guns; knives are not repainted. The copy is
+   made once per gun material and finish, and shared */
+const HYF = new Map();
+function hyFinish(o, name, fm) {
+  const src = o.material, key = src.uuid + name; let m = HYF.get(key); if (m) return m;
+  m = src.clone(); m.onBeforeCompile = finShader;
+  m.userData = { shared: true, fin: name, finS: o.matrixWorld.getMaxScaleOnAxis(), finRef: meanPaint(src) };
+  FINU[name] = FINU[name] || { finMap: { value: fm.map || null }, finCol: { value: fm.color.clone() }, finPlain: { value: fm.map ? 0 : 1 }, finRough: { value: fm.roughness }, finMetal: { value: fm.metalness } };
+  HYF.set(key, m); return m;
+}
+const FINU = {};
+// the mean brightness of the parts a finish paints (linear), so the paint keeps the texture's light and dark round its own colour
+function meanPaint(mat) {
+  const img = mat.map && mat.map.image, cl = mat.color ? mat.color.r * .2126 + mat.color.g * .7152 + mat.color.b * .0722 : 1;
+  if (!img || typeof document === "undefined") return .2 * cl;
+  try { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"); g.drawImage(img, 0, 0, 64, 64); const d = g.getImageData(0, 0, 64, 64).data;
+    const lin = v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; let s = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { const r = lin(d[i]), gg = lin(d[i + 1]), b = lin(d[i + 2]), mx = Math.max(r, gg, b), sat = mx > 1e-4 ? (mx - Math.min(r, gg, b)) / mx : 0;
+      if (b <= gg && gg <= r && sat > .55) continue; s += r * .2126 + gg * .7152 + b * .0722; n++; }
+    return Math.max(.01, (n ? s / n : .2) * cl); } catch (e) { return .2 * cl; }
+}
+function finShader(sh) {   // one named function for every copy: the same text keeps them on one program
+  const u = FINU[this.userData.fin]; Object.assign(sh.uniforms, u, { finS: { value: this.userData.finS }, finRef: { value: this.userData.finRef } });
+  sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vFinP;\nvarying vec3 vFinN;")
+    .replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n\tvFinN = objectNormal;").replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvFinP = transformed;");
+  sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vFinP;\nvarying vec3 vFinN;\nuniform sampler2D finMap;\nuniform vec3 finCol;\nuniform float finPlain, finRough, finMetal, finS, finRef;")
+    .replace("#include <map_fragment>", `#include <map_fragment>
+	vec3 finT = diffuseColor.rgb; float finL = dot( finT, vec3( .2126, .7152, .0722 ) ), finMx = max( finT.r, max( finT.g, finT.b ) );
+	float finSat = finMx > 1e-4 ? ( finMx - min( finT.r, min( finT.g, finT.b ) ) ) / finMx : 0.;
+	float finK = 1. - step( finT.b, finT.g ) * step( finT.g, finT.r ) * smoothstep( .45, .65, finSat );
+	vec3 finP = finCol;
+	if ( finPlain < .5 ) { vec3 fn = abs( normalize( vFinN ) ); fn /= fn.x + fn.y + fn.z + 1e-5; vec3 fq = vFinP * finS;
+		finP = texture2D( finMap, fq.zy ).rgb * fn.x + texture2D( finMap, fq.xz ).rgb * fn.y + texture2D( finMap, fq.xy ).rgb * fn.z; }
+	diffuseColor.rgb = mix( finT, finP * clamp( pow( finL / finRef, .6 ), .4, 1.4 ), finK );`)
+    .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n\troughnessFactor = mix( roughnessFactor, finRough, finK );")
+    .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\n\tmetalnessFactor = mix( metalnessFactor, finMetal, finK );");
 }
 /* a side profile (points as [forward, up] in metres; [cx, cy, x, y] is a curve) extruded to a width, forward -> -Z */
 function profile(pts, width, mat, bevel = .003) {
@@ -150,7 +193,7 @@ function fitImported(w, d, scene) {
   const code = codeGun(d.like || w), cb = new THREE.Box3().setFromObject(code); disposeTree(code);
   bakeSkins(scene); const root = new THREE.Group(); scene.rotation.y += d.rot; root.add(scene);
   if (!d.noLevel) levelRoll(root, scene);
-  scene.traverse(o => { if (o.isMesh) { if (!d.own) o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; else { o.material.userData.shared = true; if (d.dark) o.material.color.multiplyScalar(d.dark); } o.castShadow = true; o.geometry.userData.shared = true; } });
+  scene.traverse(o => { if (o.isMesh) { if (!d.own) o.material = MAT[d.mats[o.material.name]] || MAT.gunmetal; else { o.material.userData.shared = true; if (!/^knife/.test(w)) o.material.userData.hy = 1; if (d.dark) o.material.color.multiplyScalar(d.dark); } o.castShadow = true; o.geometry.userData.shared = true; } });
   let b = new THREE.Box3().setFromObject(root); root.scale.setScalar((cb.max.z - cb.min.z) / (b.max.z - b.min.z)); root.updateMatrixWorld(true);
   b = new THREE.Box3().setFromObject(root);
   root.position.set((cb.min.x + cb.max.x) / 2 - (b.min.x + b.max.x) / 2, cb.max.y - b.max.y, cb.min.z - b.min.z);
@@ -446,6 +489,13 @@ export function makeArms(sleeve, team = 0) {
     } };
 }
 const XAX = new THREE.Vector3(1, 0, 0), ZAX = new THREE.Vector3(0, 0, 1);
+/* where other players' hands hold a gun (2026-11-24): on its grip and handguard as client/hands.js measured them off each gun
+   for your own hands (setGrips(fn): fn(w) -> { R, L } wrist places in the gun's frame, or null until measured); the old
+   fixed spots until then. Those were one place for every gun, which suited the AK and the Glock: in its own frame the
+   Maverick M4's grip is 13 cm lower and 9 cm further forward than the AK's (the hand floated above the stock), the AWP's
+   12 cm lower */
+let GRIPS = null;
+export const setGrips = f => { GRIPS = f; };
 /* fighters (2026-11-21): bodies generated in Hunyuan 3D and rigged by us (22 bones, MODELS.md), posed here every frame
    by the same walk, crouch and aim as the code-built soldier below, with a two-bone reach that puts the hands on the
    gun. Each team has a few bodies; a player keeps one by their name. Until the files load, the code-built one stands in */
@@ -527,8 +577,9 @@ function fighter(team, F) {
     turnTo(fo, v2.copy(w1).sub(e1).normalize(), v3.copy(T).sub(e1).normalize());
   }
   const POLE_R = new THREE.Vector3(.6, -1, .3), POLE_L = new THREE.Vector3(-.8, -1, .1), tR = new THREE.Vector3(), tL = new THREE.Vector3();
+
   return {
-    root, head: bones.head, rim,
+    root, head: bones.head, rim, gun: () => mount.children[0] || null,   // the gun in their hands (its case leaves from its port: client/fx.js)
     setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); mount.userData.w = w; },
     /* o.move: the walk's direction from the facing (radians, 0 ahead), o.dead: 0..1 into the fall, o.air: 0..1 off the
        ground, o.land: 1..0 just after landing, o.act: { k: reload | cock | throw | plant | defuse, p: 0..1 through it } */
@@ -570,17 +621,19 @@ function fighter(team, F) {
       else if (act && act.k === "throw") { const f = seg(P, 0, .55), r = seg(P, .55, 1); for (let i = 0; i < 3; i++) mount.position.setComponent(i, BACK[i] + (FRONT[i] - BACK[i]) * f + ([.1, .2, -.22][i] - FRONT[i]) * r); mount.rotation.x = -1.2 * f * (1 - r); }
       else if (bow) mount.position.set(.02, -.22, -.4);
       torso.updateMatrixWorld(true);
-      mount.localToWorld(tR.set(0, -.02, .03));
+      const gun = mount.children[0], gr = gun && !knife && GRIPS ? GRIPS(w) : null;
+      if (gr) gun.localToWorld(tR.copy(gr.R)); else mount.localToWorld(tR.set(0, -.02, .03));
+      const onL = gr && gr.L ? gun.localToWorld(gr.L.clone()) : null;   // the support hand's measured place
       if (act && act.k === "reload" && len >= .3) {   // the left hand: off the grip, to the magazine, down to the belt, back up
-        const g = mount.localToWorld(new THREE.Vector3(0, -.03, -Math.min(.42, len * .5))), mg = mount.localToWorld(new THREE.Vector3(0, -.13, -.1)), belt = torso.localToWorld(new THREE.Vector3(-.16, -.32, -.08));
+        const g = onL || mount.localToWorld(new THREE.Vector3(0, -.03, -Math.min(.42, len * .5))), mg = mount.localToWorld(new THREE.Vector3(0, -.13, -.1)), belt = torso.localToWorld(new THREE.Vector3(-.16, -.32, -.08));
         const a = seg(P, .05, .25), b = seg(P, .25, .45) * (1 - seg(P, .5, .7)), c = seg(P, .75, .95);
         tL.copy(g).lerp(mg, a * (1 - c)).lerp(belt, b);
         reach("R", tR, POLE_R); reach("L", tL, POLE_L);
       } else if (act && (act.k === "cock" || act.k === "throw")) {   // the free hand points ahead, as a thrower aims
         reach("R", tR, POLE_R); reach("L", torso.localToWorld(tL.set(-.12, .12, -.42)), POLE_L);
       } else if (bow) { reach("R", tR, POLE_R); reach("L", mount.localToWorld(tL.set(-.08, 0, 0)), POLE_L); }
-      else if (knife || len < .3) { reach("R", tR, POLE_R); turn(bones.upperarmL, -sw * .6); bones.upperarmL.updateMatrixWorld(true); if (len < .3 && !knife) reach("L", mount.localToWorld(tL.set(-.03, -.03, .04)), POLE_L); }
-      else { reach("R", tR, POLE_R); reach("L", mount.localToWorld(tL.set(0, -.03, -Math.min(.42, len * .5))), POLE_L); }
+      else if (knife || len < .3) { reach("R", tR, POLE_R); turn(bones.upperarmL, -sw * .6); bones.upperarmL.updateMatrixWorld(true); if (len < .3 && !knife) reach("L", onL || mount.localToWorld(tL.set(-.03, -.03, .04)), POLE_L); }
+      else { reach("R", tR, POLE_R); reach("L", onL || mount.localToWorld(tL.set(0, -.03, -Math.min(.42, len * .5))), POLE_L); }
       root.updateMatrixWorld(true);
     }
   };
@@ -644,7 +697,7 @@ function codeSoldier(team) {
   const mount = new THREE.Group(); mount.position.set(.1, .32, -.22); spine.add(mount);
   let held = null; const rim = rimmed(root, team);   // the mount is still empty here: the gun is left out
   return {
-    root, head, rim,
+    root, head, rim, gun: () => mount.children[0] || null,
     setWeapon(w, fin = "factory") { if (held === w + fin) return; held = w + fin; for (const c of [...mount.children]) { mount.remove(c); disposeTree(c); } const m = applyFinish(gunModel(w, team, true), fin); m.scale.setScalar(1.05); mount.add(m); },
     /* speed in m/s, phase grows with distance walked, duck 0..1, pitch in radians */
     pose(speed, phase, duck, pitch) {

@@ -372,7 +372,7 @@ function onEvent(e) {
     flashAt(a.clone().lerp(b, Math.min(.9, .7 / Math.max(.7, a.distanceTo(b)))));
     // their bullet holes and sparks by calibre (2026-11-24: a puff alone before), and their gun throws its case
     if (e.w) { const dv = b.clone().sub(a), L = dv.length(); dv.divideScalar(L || 1); const h = b.distanceTo(camera.position) < 40 && W.first(a, dv, L + .5); if (h) impact(h, dv, WIDS[e.g]); else puff(b, 0xb8a888, 6, .1); }
-    { const sh = others.get(e.id), last = sh && sh.buf[sh.buf.length - 1]; if (sh && sh.model.g.visible) ejectOther(e.id, WIDS[e.g], a, b, last ? new THREE.Vector3(last.vx, 0, last.vz) : null); }
+    { const sh = others.get(e.id), last = sh && sh.buf[sh.buf.length - 1]; if (sh && sh.model.g.visible) ejectOther(e.id, WIDS[e.g], a, b, last ? new THREE.Vector3(last.vx, 0, last.vz) : null, sh.model.sd.gun && sh.model.sd.gun()); }
     if (me.alive) { const ab = b.clone().sub(a), L = ab.length(); if (L > 1) { ab.divideScalar(L); const c = camera.position, tt = clamp(c.clone().sub(a).dot(ab), 0, L), pc = a.clone().addScaledVector(ab, tt), miss = pc.distanceTo(c);
       if (tt > .5 && tt < L - .3 && miss < 2.5) { const v = clamp(1 - miss / 2.5, .15, 1); at(pc, () => (SUBSONIC.has(WIDS[e.g]) ? whiz : crack)(v)); } } }   // it passed you
     if (e.w && b.distanceTo(camera.position) < 14) at(b, () => impactSound(clamp(1 - b.distanceTo(camera.position) / 14, .1, 1))); }

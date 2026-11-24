@@ -1,7 +1,8 @@
 /* the weapon in hand: view models, the rigged arms posed on the gun every frame (reload and draw), the muzzle flash (split out of game.js 2026-11-22) */
 import * as THREE from "three";
-import { applyFinish, gunModel, loadGunModels, loadFighters, loadArms, makeArms, MUZZLE } from "../models.js";
-import { poseHands, mountArms, gripFor } from "./hands.js";
+import { applyFinish, gunModel, loadGunModels, loadFighters, loadArms, makeArms, MUZZLE, setGrips } from "../models.js";
+import { poseHands, mountArms, gripFor, thirdGrips } from "./hands.js";
+setGrips(thirdGrips);   // other players' hands on the grips measured for yours
 import { camera, params, gltf, scene } from "./core.js";
 import { WIDS, WEAPONS, clamp } from "../sim.js";
 import { myTeam, SET, dispose, others, reskin, KC, me, DRAWK } from "../game.js";
@@ -19,7 +20,7 @@ function handAt(g, x, y, z, back) {
 function viewModel(w) {
   const g = new THREE.Group(), m = applyFinish(gunModel(w, myTeam), SET.fin); g.add(m); g.userData.team = myTeam;
   // the weapon faces away from the sun: a little of its own light instead of a lamp (point lights cost every surface)
-  m.traverse(o => { o.castShadow = false; if (o.isMesh) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x2a2a2a); } });
+  m.traverse(o => { o.castShadow = false; if (o.isMesh) { const s = o.material; o.material = s.clone(); if (s.userData.fin) o.material.onBeforeCompile = s.onBeforeCompile; o.material.emissive = new THREE.Color(0x2a2a2a); } });   // a copy drops the finish's shader hook (models.js hyFinish)
   if (!ARMS) { handAt(g, 0, -.03, .0, [.05, -.12, .2]); if (HOLD[w][1] != null) handAt(g, -.01, -.01, -HOLD[w][1], [-.1, -.13, .14]); }   // the old hands until the arms are in
   return g;
 }

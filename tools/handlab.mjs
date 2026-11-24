@@ -6,6 +6,7 @@
 // each gun's wrist numbers (degrees: ext +back/-forward, uln +little-finger side, twist, the shoulder's slide in mm).
 // Exit 1 when a page error shows or a rest grip bends a wrist past a body's range (ext -60..65, uln -18..32); 2 when it
 // could not measure. Defaults: the live game, /tmp/handlab, the drawn guns.
+if (typeof WebSocket === "undefined") { console.log("handlab: run it as node --experimental-websocket handlab.mjs (node 20 has no WebSocket without it)"); process.exit(2); }   // before Chrome starts, so none is left behind
 import { spawn, execFileSync } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path"; import http from "node:http";
 const here = path.dirname(new URL(import.meta.url).pathname);
 const dir = path.resolve(process.argv[2] || path.join(here, "..")), out = path.resolve(process.argv[3] || "/tmp/handlab");

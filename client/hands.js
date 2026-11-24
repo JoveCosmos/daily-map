@@ -92,7 +92,32 @@ export function measure(vm, w) {
     const half = top + (b.max.y - top) * .55;
     out.rack = AKBOLT.has(w) ? new THREE.Vector3(gx + .045, half, out.mag.z + .07) : new THREE.Vector3(gx - .035, half, out.mag.z + .04);
   } else if (k === "pistol") out.mag = grip.bot.clone();
+  out.port = ejectPort(S, out, gx);
+  MEASW[w] = out; delete THIRD[w];   // other players' hands use it too
   return out;
+}
+/* the ejection port, where the empty case leaves (2026-11-24; one spot for every pistol and one for every long gun before):
+   on the right of the gun at the bore's height, over the front of the magazine well on a long gun (the chamber), over the
+   trigger on a gun fed through its grip (pistols, the MP9), just under the top of a pistol's slide. The bore's height is
+   the middle of the gun's front 2 cm (the muzzle); the right side is where a ray from the right meets the gun there */
+const GRIPFED = new Set(["mp9", "mac10", "tec9", "mp7", "ump"]), PORTS = {};
+export const portOf = w => PORTS[w] || null;
+function ejectPort(S, m, gx) {
+  const b = S.box, P = S.geom.attributes.position, g = m.grip;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < P.count; i++) if (P.getZ(i) < b.min.z + .02) { const y = P.getY(i); if (y < lo) lo = y; if (y > hi) hi = y; }
+  let y = lo < hi ? (lo + hi) / 2 : g.top.y + .03, z;
+  if (m.kind === "pistol" || GRIPFED.has(m.w)) z = m.trigger.z - .01;
+  else z = m.mag ? Math.max(m.mag.z, g.top.z - .2) + .03 : m.trigger.z - .06;
+  if (m.kind === "pistol") {   // just under the top of the slide over the trigger
+    const d = spans(S, new THREE.Vector3(gx, b.max.y + .05, z), new THREE.Vector3(0, -1, 0));
+    if (d.length) y = b.max.y + .05 - d[0][0] - .008;
+  }
+  for (let k = 0; k < 6; k++, y -= .004) {   // the right side there (a little lower where the ray misses)
+    const sp = spans(S, new THREE.Vector3(b.max.x + .05, y, z), new THREE.Vector3(-1, 0, 0));
+    if (sp.length) return (PORTS[m.w] = new THREE.Vector3(b.max.x + .05 - sp[0][0] + .004, y, z));
+  }
+  return (PORTS[m.w] = new THREE.Vector3(gx + .02, y, z));
 }
 // one-handed things: a knife's handle (the back part, along its length), a grenade's or the bomb's body
 export function measureHeld(vm, w) {
@@ -112,13 +137,19 @@ export function measureHeld(vm, w) {
    A hand closes round a line across its knuckles: the right hand's runs up the grip, the support hand's along the
    handguard. HAND gives that line's place in the hand's own frame (metres at the hand's size): along the fingers from the
    wrist, and out from the palm by the palm's half thickness plus the part's own radius */
-export const HAND = { thumb: [.6, 0], along: .08, alongL: .095, palm: .016, idx: .03, roll: 6 * Math.PI / 180, rollL: -6 * Math.PI / 180, yawL: 30 * Math.PI / 180, rollP: 25 * Math.PI / 180 };
+export const HAND = { thumb: [.6, 0], along: .08, alongL: .095, palm: .016, idx: .03, roll: 6 * Math.PI / 180, rollL: -6 * Math.PI / 180, yawL: 30 * Math.PI / 180,
+  /* a pistol's support hand (hand metres, radians; hand lab 2026-11-24): half a finger lower than the shooting hand and
+     out over its fingers (fwd, out), the palm turned back 30 degrees onto the grip's front left (flat on the left panel the
+     wrist bent 35-52 back and 48-68 sideways: the forearm comes in from the left), the knuckle line 25 degrees nearer
+     upright than the grip's (canted forward the wrist went past 50 toward the little finger), the thumb forward along
+     the frame over the trigger guard */
+  sup: { lower: .01, fwd: .012, out: .03, roll: 30 * Math.PI / 180, cant: -25 * Math.PI / 180, along: .95, thumb: [.15, -.6] } };
 const frameOn = (line, dir, P, radial, along, out, k) => {
   const A = dir.clone().normalize(), Pn = P.clone().addScaledVector(A, -P.dot(A)).normalize(), F = new THREE.Vector3().crossVectors(Pn, A).multiplyScalar(radial).normalize();
   return { W: line.clone().addScaledVector(F, -along * k).addScaledVector(Pn, -out), F, P: Pn };
 };
 /* k: the hand's size in the gun frame (hand metres -> gun metres); radial: each rig hand's handedness (models.js) */
-export function grips(m, k, radial) {
+export function grips(m, k, radial, lowerL = 0) {
   if (!m) return null;
   const g = m.grip, up = g.down.clone().negate(), res = {};
   // right hand: the knuckle line up the grip, index finger at its top; the palm on the grip's back and right, facing
@@ -136,10 +167,13 @@ export function grips(m, k, radial) {
     const G = m.guard, Pl = new THREE.Vector3(Math.sin(HAND.rollL), Math.cos(HAND.rollL), 0);
     res.L = frameOn(G.at, new THREE.Vector3(-Math.sin(HAND.yawL), 0, -Math.cos(HAND.yawL)), Pl, radial.L, HAND.alongL, HAND.palm * k + G.r, k);
   } else if (m.kind === "pistol") {
-    // support hand: the palm on the grip's left side and front, facing right and back into it, its fingers round the
-    // shooting hand's; the knuckle line up the grip
-    const Pl = new THREE.Vector3(1, 0, 0).multiplyScalar(Math.cos(HAND.rollP)).addScaledVector(fwd, -Math.sin(HAND.rollP));
-    res.L = frameOn(c.clone().addScaledVector(g.down, .01), up, Pl, radial.L, HAND.along * .95, HAND.palm * k + ell(HAND.rollP, g.width, g.depth) + .014 * k, k);
+    // support hand, thumbs forward as a pistol is held two-handed: the palm over the grip's left side, the fingers round the
+    // front of the shooting hand's (its index under the trigger guard), the thumb forward along the frame. It closes round
+    // the grip and the shooting fingers together, so its knuckle line runs down the front strap below the shooting hand's
+    // and out over its fingers (lowerL: further down, where a gun's trigger guard is in the way: gripFor)
+    const s = HAND.sup, Ac = up.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -s.cant);
+    const Pl = new THREE.Vector3(1, 0, 0).multiplyScalar(Math.cos(s.roll)).addScaledVector(fwd, -Math.sin(s.roll));
+    res.L = frameOn(c.clone().addScaledVector(g.down, (s.lower + lowerL) * k).addScaledVector(fwd, s.fwd * k), Ac, Pl, radial.L, HAND.along * s.along, HAND.palm * k + ell(s.roll, g.width, g.depth) + s.out * k, k);
   }
   return res;
 }
@@ -194,18 +228,30 @@ function places(m, k, radial) {
    meet it too; then the tip. The thumb's base is set across the palm, then its two joints close the same way. Done once
    per gun and hand, at the hand's rest place on the gun; the trigger finger sets its base and closes its tip on the trigger */
 const SYN = [1.25, 1.6, 1.05], TSYN = [.9, 1.15], RAD = [.0088, .0094, .009, .0078], TRAD = .0105;
-const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _hit = {}, _gi = new THREE.Matrix4();
-function touches(S, chain, from, r) {
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _hit = {}, _gi = new THREE.Matrix4(), _ab = new THREE.Vector3(), _ps = new THREE.Vector3();
+const segDist = (p, a, b) => { _ab.subVectors(b, a); const t = THREE.MathUtils.clamp(_ps.subVectors(p, a).dot(_ab) / (_ab.lengthSq() || 1), 0, 1); return _ps.copy(a).addScaledVector(_ab, t).distanceTo(p); };
+function touches(S, chain, from, r, avoid) {
   // any point along the bones from..end within r of the gun's surface
   for (let j = from; j < chain.length; j++) {
     const b = chain[j], nx = chain[j + 1]; b.getWorldPosition(_p);
     if (nx) nx.getWorldPosition(_q); else _q.set(0, b.position.length() * .92, 0).applyMatrix4(b.matrixWorld);   // the tip: as long as the bone before it
     for (let s = j === from ? .3 : 0; s <= 1.0001; s += .233) {
-      const c = S.bvh.closestPointToPoint(_p.clone().lerp(_q, s).applyMatrix4(_gi), _hit);
+      const pt = _p.clone().lerp(_q, s).applyMatrix4(_gi), c = S.bvh.closestPointToPoint(pt, _hit);
       if (c && c.distance < r) return true;
+      if (avoid) for (const k of avoid) if (segDist(pt, k.a, k.b) < r + k.r) return true;   // the other hand's fingers
     }
   }
   return false;
+}
+/* a hand's fingers and thumb as capsules in the gun's frame, as they are posed now: the other hand closes round them */
+export function fingerCaps(arms, k, vm) {
+  const S = arms.side[k], sc = arms.root.getWorldScale(new THREE.Vector3()).x, gs = vm.getWorldScale(new THREE.Vector3()).x, inv = vm.matrixWorld.clone().invert(), out = [];
+  const chains = S.fingers.map((ch, i) => [ch, RAD[i]]); if (S.thumb[0]) chains.push([S.thumb, TRAD]);
+  for (const [ch, r] of chains) ch.forEach((b, j) => {
+    const a = b.getWorldPosition(new THREE.Vector3()), e = ch[j + 1] ? ch[j + 1].getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, b.position.length() * .92, 0).applyMatrix4(b.matrixWorld);
+    out.push({ a: a.applyMatrix4(inv), b: e.applyMatrix4(inv), r: r * sc / gs });
+  });
+  return out;
 }
 export function closeFingers(arms, k, vm, opts = {}) {
   const S = shapeOf(vm); if (!S) return null;
@@ -215,9 +261,9 @@ export function closeFingers(arms, k, vm, opts = {}) {
   const set = (b, a, a2 = 0) => { b.quaternion.copy(rest.get(b)[1]).multiply(q.setFromAxisAngle(X, a)); if (a2) b.quaternion.multiply(q.setFromAxisAngle(Z, a2)); b.updateMatrixWorld(true); };
   // the largest t in [0, 1] for which apply(t) leaves bones from.. clear of the gun (a coarse sweep, then halving)
   const sweep = (apply, chain, from, r) => {
-    let a = 0, hi = 1; apply(0); if (touches(S, chain, from, r)) return 0;
-    for (let t = .05; t <= 1.0001; t += .05) { apply(t); if (touches(S, chain, from, r)) { hi = t; break; } a = t; if (t > .99) { hi = 1; a = 1; } }
-    for (let it = 0; it < 5 && hi - a > .004; it++) { const m = (a + hi) / 2; apply(m); if (touches(S, chain, from, r)) hi = m; else a = m; }
+    let a = 0, hi = 1; apply(0); if (touches(S, chain, from, r, opts.avoid)) return 0;
+    for (let t = .05; t <= 1.0001; t += .05) { apply(t); if (touches(S, chain, from, r, opts.avoid)) { hi = t; break; } a = t; if (t > .99) { hi = 1; a = 1; } }
+    for (let it = 0; it < 5 && hi - a > .004; it++) { const m = (a + hi) / 2; apply(m); if (touches(S, chain, from, r, opts.avoid)) hi = m; else a = m; }
     apply(a); return a;
   };
   const wrap = (chain, r, syn, base = null) => {
@@ -234,10 +280,11 @@ export function closeFingers(arms, k, vm, opts = {}) {
   };
   const out = { fingers: [], thumb: null };
   side.fingers.forEach((ch, i) => {
+    if (opts.only && !opts.only.includes(i)) return out.fingers.push([0, 0, 0]);   // a quick test of some fingers alone
     const r = RAD[i] * sc / gs;
     out.fingers.push(opts.trigger != null && i === 0 ? wrap(ch, r, SYN, opts.trigger) : wrap(ch, r, SYN));
   });
-  if (side.thumb[0]) {
+  if (side.thumb[0] && !opts.only) {
     const [b1, b2, b3] = side.thumb, t0 = opts.thumbBase || HAND.thumb;
     set(b1, t0[0], t0[1]);
     const ang = wrap([b2, b3], TRAD * sc / gs, TSYN);
@@ -255,7 +302,7 @@ export const ANCHOR = { down: { R: [.35, -.85, .4], L: [-.35, -.85, .4] } };
 /* the forearm's line into each grip (gun frame, elbow to wrist): the shooting hand's from behind, nearly level, a little
    outside; the support hand's up from below and outside, its wrist cocked back under the handguard (so the forearm rises
    from the bottom of the view as in CS, not across it); a pistol's support hand from below and outside */
-const FORE = { R: [-.2, .05, -.98], Llong: [.45, .6, -.6], Lpistol: [.45, .45, -.77] };
+export const FORE = { R: [-.2, .05, -.98], Llong: [.45, .6, -.6], Lpistol: [.45, .45, -.77] };
 let CAM = null;
 const camQ = () => CAM ? CAM.getWorldQuaternion(_cq) : _cq.identity(), _cq = new THREE.Quaternion();
 const D2R = Math.PI / 180;
@@ -273,7 +320,17 @@ const foreOf = (vm, c, k) => { if (c.kind !== "long" && c.kind !== "pistol") ret
    The rest grip (measured, turned, fingers closed) is worked out once per gun view and arms, then carried on the gun:
    recoil, sway, the draw and the inspect move the gun and the hands go with it */
 let CACHE = new WeakMap();
-export const resetGrips = () => { CACHE = new WeakMap(); };   // after a change to HAND or the arms (tests, tools)
+export const resetGrips = () => { CACHE = new WeakMap(); for (const k in THIRD) delete THIRD[k]; };   // after a change to HAND or the arms (tests, tools)
+/* other players' hands (models.js setGrips): their wrists' places on the gun in their hands, from the same measured grip and
+   handguard. The fighters' hands have no fingers to close and turning them tore their skin, so each wrist keeps the spot the
+   old fixed places gave on the AK and the Glock, now taken from the gun's own grip (and handguard) instead of its origin
+   (gun frame metres: a long gun's right wrist above and behind its grip's middle, its left on the handguard's underside; a
+   pistol's two wrists by its grip) */
+const MEASW = {}, THIRD = {}, TP = { R: [.017, .057, -.01], L: [.017, -.03, .019], RP: [0, .035, -.03], LP: [-.029, .026, -.021] };
+export const thirdGrips = w => { if (THIRD[w] !== undefined) return THIRD[w]; const m = MEASW[w]; if (!m) return null;
+  if (!m.grip) return (THIRD[w] = null);
+  const g = m.grip, ty = m.trigger.y - HAND.idx, c = g.top.clone().addScaledVector(g.down, Math.max(0, (g.top.y - ty) / -g.down.y)), V = a => new THREE.Vector3(...a), P = m.kind === "pistol";
+  return (THIRD[w] = { R: c.clone().add(V(P ? TP.RP : TP.R)), L: P ? c.clone().add(V(TP.LP)) : m.guard ? m.guard.at.clone().add(V(TP.L)) : null }); };
 const _c = new THREE.Quaternion();
 const toWorld = (vm, f) => ({ at: vm.localToWorld(f.W.clone()), F: f.F.clone().transformDirection(vm.matrixWorld), P: f.P.clone().transformDirection(vm.matrixWorld) });
 const curlOf = (lvl, t = 1) => ({ fingers: [0, 1, 2, 3].map(() => SYN.map(x => x * lvl * t)), thumb: [.25, -.55, .4 * lvl, .6 * lvl] });
@@ -283,14 +340,23 @@ export function gripFor(arms, w, vm) {
   scaleArms(arms, kindOf(w)); vm.updateMatrixWorld(true);
   const k = arms.root.getWorldScale(new THREE.Vector3()).x / vm.getWorldScale(new THREE.Vector3()).x, radial = { R: arms.side.R.radial, L: arms.side.L.radial };
   const kind = kindOf(w), m = kind === "long" || kind === "pistol" ? measure(vm, w) : measureHeld(vm, w);
-  const fr = kind === "long" || kind === "pistol" ? grips(m, k, radial) : heldGrip(m, k, radial);
-  c = { m, kind, fr, fingers: {}, places: m && m.grip ? places(m, k, radial) : {} };
-  if (fr) {
-    // close the fingers with the hands at their rest grip
+  c = { m, kind, fr: null, fingers: {}, places: m && m.grip ? places(m, k, radial) : {} };
+  // close the fingers with the hands at their rest grip. A pistol's support hand closes round the shooting hand's fingers as
+  // well as the grip, its thumb forward along the frame; where its index starts inside the trigger guard (it would stay
+  // straight: a finger that touches before it bends does not bend) it goes down 3 mm at a time, up to 1.5 cm (the USP)
+  let caps = null;
+  for (let low = 0; ; low += .003) {
+    const fr = c.fr = kind === "long" || kind === "pistol" ? grips(m, k, radial, low) : heldGrip(m, k, radial);
+    if (!fr) break;
     const r = fr.R ? anchor(arms, "R", toWorld(vm, fr.R), foreOf(vm, c, "R")) : null, l = fr.L ? anchor(arms, "L", toWorld(vm, fr.L), foreOf(vm, c, "L")) : null;
+    if (r && c.fingers.R) Object.assign(r, c.fingers.R);   // a retry: the shooting hand as it closed the first time
     arms.pose(r, l);
-    if (fr.R) c.fingers.R = closeFingers(arms, "R", vm, kind === "long" || kind === "pistol" ? { trigger: .3 } : {});
-    if (fr.L) c.fingers.L = closeFingers(arms, "L", vm);
+    if (fr.R && !c.fingers.R) c.fingers.R = closeFingers(arms, "R", vm, kind === "long" || kind === "pistol" ? { trigger: .3 } : {});
+    if (!fr.L) break;
+    if (kind !== "pistol") { c.fingers.L = closeFingers(arms, "L", vm); break; }
+    caps = caps || fingerCaps(arms, "R", vm); c.lowL = low;
+    // the support index alone first (cheap); the whole hand once, where that finger closes
+    if (closeFingers(arms, "L", vm, { avoid: caps, only: [0] }).fingers[0][0] > .05 || low > .0149) { c.fingers.L = closeFingers(arms, "L", vm, { avoid: caps, thumbBase: HAND.sup.thumb }); break; }
   }
   per.set(arms, c); return c;
 }
