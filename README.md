@@ -42,7 +42,7 @@ the menu for modes).
   counter-strafe, crouch into bursts, jump, spray and pull against the recoil; they hear shots, runs and landings), and
   strafe, take cover, flank, buy, use grenades, plant, retake and defuse; a radar;
   team chat, radio calls and pings; a damage report and assists; private rooms with a 4-letter code; a leaderboard per
-  map; recorded gun sounds heard in 3D, with echo from the surroundings, bullets that crack and whiz past; real models for the AK-47, M4 and Desert Eagle held in rigged first-person arms; a thin outline of the team's colour round every living fighter; spent cases, tracers, sparks and bullet holes by calibre; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
+  map; recorded gun sounds heard in 3D, with echo from the surroundings, bullets that crack and whiz past; real models for the AK-47, M4 and Desert Eagle held in rigged first-person arms, the hands gripping each gun where its own shape says (grip, trigger, handguard, magazine); a thin outline of the team's colour round every living fighter; spent cases, tracers, sparks and bullet holes by calibre; touch controls on phones; settings (CS-scale sensitivity, FOV, volume, crosshair, weapon finish).
 
 ## Run it
 
@@ -116,7 +116,7 @@ server/*test.mjs        tests: netcode (nettest), weapons and movement (feeltest
 maps/                   map definitions and their meshes
 sounds/                 recorded gunshots, reloads, footsteps and explosions, all CC0 (see SOUNDS.md)
 models/                 public-domain gun models and the first-person arms rig (see MODELS.md)
-tools/                  the map pipeline
+tools/                  the map pipeline and its checks, and handlab (the first-person hands, gun by gun)
 vendor/                 three.js, three-mesh-bvh, spark
 ```
 

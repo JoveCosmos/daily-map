@@ -46,8 +46,14 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   tell them apart (`VARIANT`). A few guns use a public-domain model instead (`IMPORTED`, files in `models/`, credits in
   MODELS.md): it is painted in the game's own materials and fitted to the code-built gun's box (muzzle, top, centre),
   so hands, flash and tracers need no change, and `?codeguns` shows the old one. Weapon finishes repaint a gun's body
-  materials (`applyFinish`). The first-person arms are a rig posed in code every frame (`makeArms`, `poseArms` in
-  client/viewmodel.js, settings in `ARMSET`): hands placed on the gun, elbows solved to reach. Every fighter's body gets
+  materials (`applyFinish`). The first-person arms (rebuilt 2026-11-24) are one rig for every arms file (upper arm,
+  forearm, a twist bone half way and one at the wrist, hand, fingers; `models/arms-cc0.glb` here), posed in code every
+  frame: `makeArms` in models.js places and turns each hand exactly, works the shoulder back from the hand so the wrist
+  keeps a natural bend, picks the elbow round the reach circle and spreads the hand's turn over the twist bones; the
+  sleeve does not turn with the forearm, the glove and its strap do. Where the hands go is client/hands.js: each gun's
+  grip line, trigger, handguard and magazine measured off its own mesh by rays (`measure`, once per gun in idle time),
+  fingers closed joint by joint until they meet the gun (`closeFingers`), reloads moving the support hand by the gun's
+  parts at the reload sounds (`RELOAD`), the arms scaled by what is held (`MOUNT`). Every fighter's body gets
   a thin edge of its team's colour (`RIM`, `rimmed`): a copy of the body material per fighter on one shared shader, built
   on the smooth normal (the cloth's normal maps lit the whole body), switched by `sd.rim(0..1)`, which goes out as the
   fighter falls, so a lit outline always means someone alive. **`index.html`** holds the page, the menu and all CSS.
@@ -163,6 +169,9 @@ multiplayer correct, and the traps that already cost time once. Read it before t
   recovery, tagging, falloff, wallbangs, bursts, the Zeus, landing and bunny hops; a held spray and the rate of fire
   through `weapon()` tick by tick; steps, ramps, rough floors, ledges, the counter-strafe) and that prediction replays
   exactly. No server needed.
+- The first-person hands: `tools/handlab.mjs [game dir] [out dir] [guns]` poses the arms on each gun as the game does and
+  saves six views at rest plus an eye-view strip of the draw, the reload and the inspect, with each wrist's bend in
+  degrees; exit 1 on a page error or a wrist bent past a body's range.
 - A map: `tools/check.mjs <id>` (its play tests need this `sim.js`; `SIM=<path>` checks against another build),
   `tools/botcheck.mjs <id> [seconds] [game dir]` (a bot-only Competitive match), `tools/vischeck.mjs <id> [game dir]`
   (how the fighters stand out; `SHOT=<prefix>` saves a few views).

@@ -309,108 +309,143 @@ function kit(team) {
     dark: sh(M(0x111418, .25, .4)), balaclava: sh(M(0x3a3f44, .95)), lens: sh(new THREE.MeshPhysicalMaterial({ color: 0x2e4a3a, roughness: .04, metalness: .6, clearcoat: 1, emissive: 0x0a1a12 })), scarf: sh(M(0x4a3c2c, .95)) });
 }
 export const sleeveMaterial = team => kit(team).cloth;
-/* first-person arms (2026-11-16): a CC0 rig (MODELS.md) with real hands, dressed as the team's sleeves and dark gloves
-   (each triangle by the bone that moves it most), and posed in code every frame: each hand is put on the gun and turned
-   to hold it, the fingers curl round, and a two-bone solve bends the elbow so the arm reaches the hand. The file's hands
-   hang from their own control bones (its IK lived in Blender and does not export), which is what makes this possible */
-/* 2026-11-22: each team's own textured Hunyuan 3D arms (arms-atlas, arms-ember) on the same rig: assets/hy/fitarms.py
-   poses the rig into their shape and gives them its weights, so the posing below works on them unchanged; they keep
-   their own colours. A team without its file falls back to the CC0 arms in its sleeves */
+/* first-person arms (rebuilt 2026-11-24, assets/hy/fitarms.py; the 2026-11-16 CC0 rig and the 2026-11-22 fit are retired).
+   Every arms file carries one armature, in metres, facing -Z: upper_arm -> forearm -> forearm_twist (half way) and wrist (at
+   the wrist) -> hand -> fingers. A team's file (arms-atlas, arms-ember) is its generated sleeve with the CC0 hand as the
+   glove; arms-cc0 is the CC0 arm alone (the fallback, and the public game's), worn in the team's sleeve material.
+   pose() takes each hand's place and facing on the gun and works the arm out the way a body would:
+   - the elbow: of every elbow the two bone lengths allow (a circle round the shoulder-wrist line), the one that leaves the
+     wrist nearest its comfortable grip (a little extended and toward the little finger), the hand turned within a
+     forearm's range, and the elbow toward the side asked (client/hands.js works the shoulder and that side out from the
+     hand, so the best elbow is usually exactly the natural one). The old solve took a fixed elbow direction and put the rest in the wrist
+     (bent up to 77 degrees one way and 70 the other at once: "twisted at the wrist")
+   - the turn of the hand about the forearm goes to the forearm, as the radius rolls over the ulna: wrist carries all of it,
+     forearm_twist half; the sleeve rides the forearm and does not turn (a loose sleeve does not), the glove's strap does
+   - the shoulder is off screen: when a hand is out of reach it slides toward it, never the hand away from the gun
+   - the fingers bend at each of their three joints by the angles given (client/hands.js closes them on the gun) */
 const ARMS = { scene: null, team: [null, null], used: false };
 const load1 = async (loader, f) => { try { return (await loader.loadAsync("models/" + f + BUST)).scene; } catch (e) { return null; } };
 export async function loadArms(loader) {
-  [ARMS.scene, ARMS.team[0], ARMS.team[1]] = await Promise.all(["arms.glb", fileFor("arms-atlas.glb"), fileFor("arms-ember.glb")].map(f => load1(loader, f)));
+  [ARMS.scene, ARMS.team[0], ARMS.team[1]] = await Promise.all(["arms-cc0.glb", fileFor("arms-atlas.glb"), fileFor("arms-ember.glb")].map(f => load1(loader, f)));
   return !!(ARMS.scene || ARMS.team[0] || ARMS.team[1]);
 }
-const HANDISH = /hand|palm|f_|thumb/;
+export const FINGERS = ["index", "middle", "ring", "pinky"];
+// how a body likes its wrist (degrees): [preferred, softness, hardest one way, hardest the other]. twist: the hand's turn
+// about the forearm from the rig's rest; only the strap and glove turn with it (the sleeve does not), so it is barely held
+export const WRIST = { ext: [12, 30, -60, 65], uln: [8, 18, -18, 32], twist: [0, 400, -170, 170] };
 export function makeArms(sleeve, team = 0) {
   let root = ARMS.team[team ? 1 : 0];
   if (!root) { if (!ARMS.scene || ARMS.used) return null; root = ARMS.scene; ARMS.used = true; }
-  // the HY files carry two skinned meshes on one skeleton: the textured sleeves and the rig's own gloved hands (Glove)
-  let mesh = null; const extra = []; root.traverse(o => { if (!o.isSkinnedMesh) return; if (o.name.startsWith("Glove")) extra.push(o); else mesh = o; });
-  if (!mesh) return null;
-  for (const o of extra) { o.frustumCulled = false; o.castShadow = false; }
-  const own = !!(mesh.material && mesh.material.map);
-  // dress: the team's sleeve, darkened to a glove where the hand bones carry the skin. A colour per vertex, so the cuff
-  // blends across the wrist (whole triangles to one material or the other left a saw-tooth edge, 2026-11-16)
-  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = mesh.skeleton.bones, n = si.count, col = new Float32Array(n * 3);
-  if (own) { mesh.frustumCulled = false; mesh.castShadow = false; mesh.material.roughness = Math.max(mesh.material.roughness, .6);
-    /* 2026-11-23: the generated hands survived the cut in fitarms.py, skinned stiff to the forearms: ~1300 vertices a side
-       past the wrist, drawn as flat grey slabs over the rigged glove (no curl, the hand looked unwired; on the knife a
-       "second blade"). With the Glove mesh in, drop every sleeve triangle that reaches past the wrist (bind pose) */
-    if (extra.length && g.index) { const p = g.attributes.position, past = new Uint8Array(n), v = new THREE.Vector3();
-      const at = nm => { const i = bones.findIndex(b => b.name === nm); return i < 0 ? null : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert()); };
-      for (const k of ["R", "L"]) { const a = at("forearm" + k), e = at("forearm" + k + "_end"); if (!a || !e) continue; const ax = e.sub(a), L2 = ax.lengthSq();
-        for (let i = 0; i < n; i++) { v.fromBufferAttribute(p, i).applyMatrix4(mesh.bindMatrix).sub(a); const t = v.dot(ax) / L2; if (t > .8 && v.addScaledVector(ax, -t).length() < .2) past[i] = 1; } }
-      /* the cuff (2026-11-23): sleeve vertices still partly on the hand bones were pulled into flaps whenever the hand
-         turned (knife, nade, bomb); the sleeve's end rides the forearm, the glove covers the wrist */
-      const fore = { R: bones.findIndex(b => b.name === "forearmR"), L: bones.findIndex(b => b.name === "forearmL") };
-      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) { const nm = bones[si.getComponent(i, k)].name; if (HANDISH.test(nm)) { const f = fore[/L$/.test(nm) ? "L" : "R"]; if (f >= 0) si.setComponent(i, k, f); } }
-      si.needsUpdate = true;
-      const ix = g.index.array, keep = []; for (let t = 0; t < ix.length; t += 3) if (!past[ix[t]] && !past[ix[t + 1]] && !past[ix[t + 2]]) keep.push(ix[t], ix[t + 1], ix[t + 2]);
-      g.setIndex(keep); } }
-  else for (let v = 0; v < n; v++) { let hw = 0; for (let k = 0; k < 4; k++) if (HANDISH.test(bones[si.getComponent(v, k)].name)) hw += sw.getComponent(v, k);
-    col.fill(1 - .89 * THREE.MathUtils.smoothstep(hw, .35, .75), v * 3, v * 3 + 3); }   // 1 on the sleeve, .11 (a dark glove) on the hand
-  if (!own) { g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.clearGroups();
-  sleeve.vertexColors = true; sleeve.needsUpdate = true; mesh.material = sleeve; mesh.frustumCulled = false; mesh.castShadow = false; }
-  const B = n => bones.find(b => b.name === n.replace(/\./g, ""));
-  const side = k => ({ up: B("upper_arm." + k), fore: B("forearm." + k), end: B("forearm." + k + "_end"), hand: B("hand." + k + ".control"),
-    fingers: ["index", "middle", "ring", "pinky"].flatMap(f => [1, 2, 3].map(i => B(`f_${f}.0${i}.${k}`))).filter(Boolean), thumb: [1, 2, 3].map(i => B(`thumb.0${i}.${k}`)).filter(Boolean) });
-  const R = side("R"), L = side("L"), rest = new Map(); for (const b of bones) rest.set(b, [b.position.clone(), b.quaternion.clone()]);
-  // each hand's own axes, measured off its knuckles: F along the fingers, N out of the palm (cross of F and the line from
-  // the little finger's knuckle to the index finger's), so a hand can be turned to a direction and a palm facing
+  const meshes = []; root.traverse(o => { if (o.isSkinnedMesh) { o.frustumCulled = false; o.castShadow = false; meshes.push(o); } });
+  if (!meshes.length) return null;
+  for (const m of meshes) {
+    if (m.material && m.material.name === "sleeve") m.material = sleeve;   // the bare CC0 skin wears the team's sleeve
+    else if (m.material && m.material.map) m.material.roughness = Math.max(m.material.roughness, .6);
+  }
+  const bones = meshes[0].skeleton.bones, B = n => bones.find(b => b.name === n);
+  if (!B("wristR") || !B("handR")) return null;   // an arms file from before the rebuild
+  const rest = new Map(); for (const b of bones) rest.set(b, [b.position.clone(), b.quaternion.clone()]);
   root.updateMatrixWorld(true);
-  for (const [S, k] of [[R, "R"], [L, "L"]]) {
-    const inv = S.hand.matrixWorld.clone().invert(), at = n => B(n).getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
-    const F = at("f_middle.01." + k).normalize(), across = at("palm_index." + k).sub(at("palm_pinky." + k)).normalize();
-    S.F = F; S.N = new THREE.Vector3().crossVectors(F, across).normalize(); if (k === "L") S.N.negate();
-    // the palm's facing as the forearm sees it at rest, so the forearm can roll with the hand (wrist twist, below)
-    S.refN = S.N.clone().transformDirection(S.hand.matrixWorld).applyQuaternion(S.fore.getWorldQuaternion(new THREE.Quaternion()).invert());
+  const inv = root.matrixWorld.clone().invert(), at = (b, v = new THREE.Vector3()) => b.getWorldPosition(v).applyMatrix4(inv);   // root space
+  const wq = b => b.getWorldQuaternion(new THREE.Quaternion()), rq = root.getWorldQuaternion(new THREE.Quaternion()).invert();
+  const SIDE = {};
+  for (const k of ["R", "L"]) {
+    const S = { k, up: B("upper_arm" + k), fo: B("forearm" + k), tw: B("forearm_twist" + k), wr: B("wrist" + k), hand: B("hand" + k),
+      fingers: FINGERS.map(f => [1, 2, 3].map(i => B(`f_${f}0${i}${k}`))), thumb: [1, 2, 3].map(i => B(`thumb0${i}${k}`)) };
+    const s0 = at(S.up), e0 = at(S.fo), w0 = at(S.hand);
+    S.la = s0.distanceTo(e0); S.lb = e0.distanceTo(w0);
+    // the hand's own axes at rest (root space): F along the middle finger, A across the knuckles toward the index (radial),
+    // P out of the palm (the side the fingers curl to); kept in the hand bone's frame
+    const F = at(S.fingers[1][0]).sub(w0).normalize(), A = at(S.fingers[0][0]).sub(at(S.fingers[3][0])); A.addScaledVector(F, -A.dot(F)).normalize();
+    const P = new THREE.Vector3().crossVectors(F, A).normalize(), tip = at(S.fingers[1][2]).sub(at(S.fingers[1][0]));
+    if (P.dot(tip) < 0) P.negate();
+    S.radial = Math.sign(new THREE.Vector3().crossVectors(F, P).dot(A));   // A = radial * (F x P): which way round this hand is
+    const hq = wq(S.hand).premultiply(rq).invert(); S.F = F.clone().applyQuaternion(hq); S.P = P.clone().applyQuaternion(hq);
+    // the forearm's line, in its own frame and in each twist bone's
+    const fl = w0.clone().sub(e0).normalize();
+    const loc = b => fl.clone().applyQuaternion(wq(b).premultiply(rq).invert());
+    S.af = loc(S.fo); S.atw = S.tw ? loc(S.tw) : null; S.awr = loc(S.wr);
+    // the elbow's hinge at rest, in the upper arm's frame and the forearm's (the arm keeps it as it bends)
+    S.n0 = new THREE.Vector3().crossVectors(e0.clone().sub(s0), w0.clone().sub(e0)).normalize();
+    S.u0 = e0.clone().sub(s0).normalize(); S.f0 = fl;
+    S.qu0 = wq(S.up).premultiply(rq); S.qf0 = wq(S.fo).premultiply(rq);
+    SIDE[k] = S;
   }
-  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), pole = new THREE.Vector3();
-  const setWorldQuat = (b, wq) => { b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(wq)); b.updateMatrixWorld(true); };
-  const turnTo = (b, from, to) => { b.getWorldQuaternion(q1); setWorldQuat(b, new THREE.Quaternion().setFromUnitVectors(from, to).multiply(q1)); };
-  const frame = (a, b) => { const c = new THREE.Vector3().crossVectors(a, b); return new THREE.Matrix4().makeBasis(a, b, c); };
-  function reach(S, T, F, N, curl, thumbCurl, poleDir) {
-    // the hand: placed, and turned so its fingers run along F with the palm toward N (both world)
-    const f = F.clone().normalize(), nn = N.clone().addScaledVector(f, -N.dot(f)).normalize();
-    const Q = new THREE.Quaternion().setFromRotationMatrix(frame(f, nn).multiply(frame(S.F, S.N).transpose()));
-    S.hand.parent.updateMatrixWorld(true); S.hand.position.copy(S.hand.parent.worldToLocal(T.clone())); setWorldQuat(S.hand, Q);
-    for (const f of S.fingers) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), curl));
-    for (const f of S.thumb) f.quaternion.multiply(q1.setFromAxisAngle(new THREE.Vector3(1, 0, 0), thumbCurl));
-    // the arm: shoulder fixed, elbow from the two lengths, bent toward the pole
-    /* the sleeve ends ~.8 of the way down the rig's forearm (the generated hand was cut off there), so aim the forearm's
-       end into the glove along the fingers: the cuff then meets the wrist instead of stopping short of a floating hand */
-    T = T.clone().addScaledVector(f, .18 * S.fore.getWorldPosition(v2).distanceTo(S.end.getWorldPosition(v3)));
-    /* out of reach (2026-11-23): the arm stopped short at full stretch and the glove hung alone at the target (the
-       generated hand, stuck to the forearm, used to hide it). The shoulder is off screen: slide it toward the hand */
-    { const s0 = S.up.getWorldPosition(new THREE.Vector3()), e0 = S.fore.getWorldPosition(new THREE.Vector3()), w0 = S.end.getWorldPosition(new THREE.Vector3());
-      const over = s0.distanceTo(T) - (s0.distanceTo(e0) + e0.distanceTo(w0)) * .97;
-      if (over > 0) { const p = S.up.parent; p.updateMatrixWorld(true); const to = p.worldToLocal(s0.clone().addScaledVector(T.clone().sub(s0).normalize(), over)); S.up.position.copy(to); S.up.updateMatrixWorld(true); } }
-    const sh = S.up.getWorldPosition(new THREE.Vector3()), el0 = S.fore.getWorldPosition(new THREE.Vector3()), wr0 = S.end.getWorldPosition(new THREE.Vector3());
-    const la = sh.distanceTo(el0), lb = el0.distanceTo(wr0), d = v1.copy(T).sub(sh), dist = THREE.MathUtils.clamp(d.length(), Math.abs(la - lb) + 1e-4, (la + lb) * .999);
-    d.normalize(); const ca = (la * la + dist * dist - lb * lb) / (2 * la * dist), along = la * ca, up = la * Math.sqrt(Math.max(0, 1 - ca * ca));
-    pole.copy(poleDir).addScaledVector(d, -poleDir.dot(d)).normalize(); const elbow = sh.clone().addScaledVector(d, along).addScaledVector(pole, up);
-    turnTo(S.up, v2.copy(el0).sub(sh).normalize(), v3.copy(elbow).sub(sh).normalize());
-    const e1 = S.fore.getWorldPosition(new THREE.Vector3()), w1 = S.end.getWorldPosition(new THREE.Vector3());
-    turnTo(S.fore, v2.copy(w1).sub(e1).normalize(), v3.copy(T).sub(e1).normalize());
-    /* wrist twist (2026-11-23): the hand bone turns on its own, the forearm only aimed, so a knife or nade grip put all
-       the roll in the wrist skin and tore the sleeve like a sweet wrapper. Roll the forearm about its own line to most
-       of the hand's turn, as a real forearm does */
-    if (S.refN) { const ax = v3.copy(T).sub(e1).normalize(), fq = S.fore.getWorldQuaternion(new THREE.Quaternion());
-      const cur = S.refN.clone().applyQuaternion(fq), want = nn.clone(); cur.addScaledVector(ax, -cur.dot(ax)); want.addScaledVector(ax, -want.dot(ax));
-      if (cur.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { const ang = Math.atan2(ax.dot(v2.crossVectors(cur, want)), cur.dot(want));
-        setWorldQuat(S.fore, new THREE.Quaternion().setFromAxisAngle(ax, ang * .85).multiply(fq)); } }
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), v3 = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), m1 = new THREE.Matrix4(), m2 = new THREE.Matrix4();
+  const D = 180 / Math.PI;
+  const pen = (x, [p, s, lo, hi]) => ((x - p) / s) ** 2 + (x > hi ? ((x - hi) / 3) ** 2 : 0) + (x < lo ? ((lo - x) / 3) ** 2 : 0);
+  const basis = (a, b) => { const c = new THREE.Vector3().crossVectors(a, b); return new THREE.Matrix4().makeBasis(a, b, c); };
+  const setWorld = (b, q) => { b.parent.getWorldQuaternion(q2); b.quaternion.copy(q2.invert().multiply(q)); b.updateMatrixWorld(true); };
+  // one arm: T = { at, F, P, pole } (world), returns what it did (for the lab and tests)
+  function reach(S, T) {
+    const wroot = root.getWorldQuaternion(new THREE.Quaternion()), sc = root.getWorldScale(new THREE.Vector3()).x;
+    const la = S.la * sc, lb = S.lb * sc;
+    // the hand's world turn, from its fingers' direction and its palm's
+    const F = T.F.clone().normalize(), P = T.P.clone().addScaledVector(F, -T.P.dot(F)).normalize();
+    const Qh = new THREE.Quaternion().setFromRotationMatrix(basis(F, P).multiply(m2.copy(basis(S.F, S.P)).transpose()));
+    const A = new THREE.Vector3().crossVectors(F, P).multiplyScalar(S.radial);
+    // the shoulder slides along its line to the hand when the hand is out of reach (or too close to bend into)
+    // the shoulder: where the caller puts it (first-person arms anchor each one off screen), else where the rig has it
+    if (T.shoulder) { S.up.parent.updateMatrixWorld(true); S.up.position.copy(S.up.parent.worldToLocal(T.shoulder.clone())); S.up.updateMatrixWorld(true); }
+    const W = T.at, s0 = S.up.getWorldPosition(new THREE.Vector3()); let d = s0.distanceTo(W); const far = (la + lb) * .995, near = Math.abs(la - lb) + .2 * Math.min(la, lb);
+    let slid = 0;
+    if (d > far || d < near) { const want = d > far ? far : near, back = s0.clone().sub(W).normalize(); slid = d - want; s0.copy(W).addScaledVector(back, want); S.up.parent.updateMatrixWorld(true);
+      S.up.position.copy(S.up.parent.worldToLocal(s0.clone())); S.up.updateMatrixWorld(true); d = want; }
+    const u = v1.copy(W).sub(s0).normalize().clone(), ca = (la * la + d * d - lb * lb) / (2 * la * d), along = la * ca, rad = la * Math.sqrt(Math.max(0, 1 - ca * ca));
+    const p1 = new THREE.Vector3(0, 1, 0).cross(u); if (p1.lengthSq() < 1e-6) p1.set(1, 0, 0).cross(u); p1.normalize(); const p2 = new THREE.Vector3().crossVectors(u, p1);
+    const C = s0.clone().addScaledVector(u, along), pole = T.pole.clone().addScaledVector(u, -T.pole.dot(u)).normalize();
+    const n0w = S.n0.clone().applyQuaternion(wroot), u0w = S.u0.clone().applyQuaternion(wroot), f0w = S.f0.clone().applyQuaternion(wroot);
+    const qu0w = wroot.clone().multiply(S.qu0), qf0w = wroot.clone().multiply(S.qf0);
+    // everything an elbow at angle t round the circle implies
+    const at_ = t => {
+      const E = C.clone().addScaledVector(p1, Math.cos(t) * rad).addScaledVector(p2, Math.sin(t) * rad);
+      const u1 = E.clone().sub(s0).normalize(), a1 = v2.copy(W).sub(E).normalize().clone(), n1 = new THREE.Vector3().crossVectors(u1, a1).normalize();
+      // the arm turned so its rest upper arm and hinge land on the new ones, then the elbow bent about that hinge
+      const R = new THREE.Quaternion().setFromRotationMatrix(basis(u1, n1).multiply(m1.copy(basis(u0w, n0w)).transpose()));
+      const Qu = R.clone().multiply(qu0w), fr = f0w.clone().applyQuaternion(R), Qf = new THREE.Quaternion().setFromUnitVectors(fr, a1).multiply(R).multiply(qf0w);
+      // the wrist: the forearm's line seen from the hand (extension toward the palm side, ulnar toward the radial axis' opposite)
+      const ext = Math.atan2(a1.dot(P), a1.dot(F)) * D, uln = Math.atan2(a1.dot(A), a1.dot(F)) * D;
+      // the hand's turn about the forearm from the rest (what the twist bones will carry): the sleeve does not turn, the strap
+      // and glove do, so this only costs past a forearm's real range
+      const Ql = Qf.clone().invert().multiply(Qh), pr = Ql.x * S.af.x + Ql.y * S.af.y + Ql.z * S.af.z, t2 = 2 * Math.atan2(pr, Ql.w), tw = Math.atan2(Math.sin(t2), Math.cos(t2)) * D;
+      const cost = pen(ext, T.ext0 != null ? [T.ext0, WRIST.ext[1], WRIST.ext[2], WRIST.ext[3]] : WRIST.ext) + pen(uln, T.uln0 != null ? [T.uln0, WRIST.uln[1], WRIST.uln[2], WRIST.uln[3]] : WRIST.uln) + pen(tw, WRIST.twist) + 2 * (1 - E.clone().sub(C).normalize().dot(pole));
+      return { E, Qu, Qf, ext, uln, sup: tw, cost };
+    };
+    // the elbow's angle round the circle: last frame's neighbourhood first (the hands move a little a frame), the whole
+    // circle when there is no last one or the near search came out much worse (a switch, a reload's jump)
+    let best = null; const D1 = Math.PI / 180, warm = S.lastT != null;
+    const look = (t) => { const r = at_(t); if (!best || r.cost < best.cost) best = Object.assign(r, { t }); };
+    if (warm) for (let i = -12; i <= 12; i += 3) look(S.lastT + i * D1);
+    if (!warm || best.cost > S.lastCost * 1.5 + .5) { for (let i = 0; i < 36; i++) look(i / 36 * Math.PI * 2); }
+    const c0 = best.t; for (let i = -2; i <= 2; i++) if (i) look(c0 + i * D1);
+    S.lastT = best.t; S.lastCost = best.cost;
+    setWorld(S.up, best.Qu); setWorld(S.fo, best.Qf);
+    // the hand's turn about the forearm (its twist) goes to the twist bones; the hand keeps the rest (the bend at the wrist)
+    const Ql = S.fo.getWorldQuaternion(q1).invert().multiply(Qh), ax = S.af, pr = Ql.x * ax.x + Ql.y * ax.y + Ql.z * ax.z;
+    const tw = 2 * Math.atan2(pr, Ql.w), twist = Math.atan2(Math.sin(tw), Math.cos(tw));
+    if (S.tw) { S.tw.quaternion.copy(rest.get(S.tw)[1]).multiply(q2.setFromAxisAngle(S.atw, twist / 2)); S.tw.updateMatrixWorld(true); }
+    S.wr.quaternion.copy(rest.get(S.wr)[1]).multiply(q2.setFromAxisAngle(S.awr, twist)); S.wr.updateMatrixWorld(true);
+    setWorld(S.hand, Qh);
+    return { ext: best.ext, uln: best.uln, sup: best.sup, twist: twist * D, slid, cost: best.cost, E: best.E };
   }
-  return { root, mesh,
-    /* r and l: { at, fingers, palm, pole } in world space, l may be null (one-handed: it hangs); o: curls */
-    pose(r, l, o = {}) {
+  // fingers: [[mcp, pip, dip] x index, middle, ring, pinky] (radians, + closes), thumb: [base in, base across, middle, tip]
+  function bend(S, fingers, thumb) {
+    S.fingers.forEach((ch, i) => { const a = fingers[i] || fingers; ch.forEach((b, j) => { if (b) b.quaternion.copy(rest.get(b)[1]).multiply(q1.setFromAxisAngle(XAX, (Array.isArray(a) ? a[j] : a) || 0)); }); });
+    if (thumb) { const [t0, t1, t2, t3] = thumb, [b1, b2, b3] = S.thumb;
+      if (b1) b1.quaternion.copy(rest.get(b1)[1]).multiply(q1.setFromAxisAngle(XAX, t0 || 0)).multiply(q2.setFromAxisAngle(ZAX, t1 || 0));
+      if (b2) b2.quaternion.copy(rest.get(b2)[1]).multiply(q1.setFromAxisAngle(XAX, t2 || 0));
+      if (b3) b3.quaternion.copy(rest.get(b3)[1]).multiply(q1.setFromAxisAngle(XAX, t3 || 0)); }
+  }
+  return { root, mesh: meshes[0], meshes, side: SIDE, rest,
+    /* r, l: { at, F, P, pole, shoulder, ext0, uln0, fingers, thumb } in world space (ext0/uln0: this grip's own wrist; l null: that arm keeps its rest) */
+    pose(r, l) {
       for (const [b, [p, q]] of rest) { b.position.copy(p); b.quaternion.copy(q); } root.updateMatrixWorld(true);
-      reach(R, r.at, r.fingers, r.palm, o.curl ?? 1.1, o.thumb ?? .5, r.pole);
-      if (l) reach(L, l.at, l.fingers, l.palm, o.curlL ?? .9, o.thumbL ?? .3, l.pole);
-      root.updateMatrixWorld(true);
+      const out = {};
+      for (const [k, T] of [["R", r], ["L", l]]) { if (!T) continue; out[k] = reach(SIDE[k], T); bend(SIDE[k], T.fingers || 0, T.thumb); }
+      root.updateMatrixWorld(true); return out;
     } };
 }
+const XAX = new THREE.Vector3(1, 0, 0), ZAX = new THREE.Vector3(0, 0, 1);
 /* fighters (2026-11-21): bodies generated in Hunyuan 3D and rigged by us (22 bones, MODELS.md), posed here every frame
    by the same walk, crouch and aim as the code-built soldier below, with a two-bone reach that puts the hands on the
    gun. Each team has a few bodies; a player keeps one by their name. Until the files load, the code-built one stands in */
